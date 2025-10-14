@@ -1,0 +1,10 @@
+local_model:
+  path: "/path/to/your/local/model"
+  host: "localhost"
+  port: 5000
+
+encryption_key: "32_byte_random_key_here!!"
+
+vector_db:
+  type: "chroma"
+  path: "./vector_store/"

@@ -1,0 +1,9 @@
+transformers
+torch
+sentencepiece
+accelerate
+pycryptodome
+requests
+uvicorn[standard]
+passlib
+python-jose

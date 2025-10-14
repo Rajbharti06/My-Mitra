@@ -1,0 +1,64 @@
+.conversational-card {
+  background-color: #f0f2f5;
+  border-radius: 12px;
+  padding: 15px;
+  margin-bottom: 10px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
+  color: #333;
+  font-family: 'Inter', sans-serif;
+}
+
+.conversational-card h3 {
+  color: #3a6ea5;
+  margin-top: 0;
+  margin-bottom: 10px;
+  font-size: 1.1em;
+}
+
+.conversational-card p {
+  font-size: 0.95em;
+  line-height: 1.4;
+  margin-bottom: 10px;
+}
+
+.conversational-card .description {
+  color: #555;
+}
+
+.card-button {
+  background-color: #3a6ea5;
+  color: white;
+  border: none;
+  border-radius: 8px;
+  padding: 8px 15px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.2s ease;
+}
+
+.card-button:hover {
+  background-color: #2a5a8a;
+}
+
+.mood-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.mood-button {
+  background-color: #e0e6ed;
+  color: #3a6ea5;
+  border: 1px solid #cdd6e1;
+  border-radius: 16px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.mood-button:hover {
+  background-color: #d0d6dd;
+  border-color: #b0b6bd;
+}

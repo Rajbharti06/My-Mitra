@@ -1,0 +1,24 @@
+# Core AI Dependencies
+fastapi==0.103.1
+uvicorn==0.23.2
+python-dotenv==1.0.0
+
+# AI/ML
+transformers==4.34.0
+torch==2.6.0
+sentence-transformers==2.2.2
+
+# Database
+sqlalchemy>=2.0.36,<2.1
+
+chromadb==0.4.15
+
+# Security
+cryptography==41.0.3
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.9
+
+# Utilities
+tqdm==4.66.1
+loguru==0.7.0
