@@ -5,7 +5,7 @@ MyMitra is a privacy-first emotional AI companion with multiple personalities an
 ## Quick Start
 
 - Clone and install:
-  - `git clone <repo-url>`
+  - `git clone https://github.com/Rajbharti06/My-Mitra`
   - Backend: `python -m venv .venv && .venv\\Scripts\\activate && pip install -r backend/requirements.txt`
   - Frontend: `cd frontend && npm install`
 - Run services:
@@ -34,7 +34,7 @@ MyMitra is a privacy-first emotional AI companion with multiple personalities an
    - Git
    - Ollama (ensure service is running)
 2. Clone repository:
-   - `git clone <repo-url> && cd MyMitra`
+   - `git clone https://github.com/Rajbharti06/My-Mitra && cd MyMitra`
 3. Backend setup:
    - `python -m venv .venv`
    - `.venv\\Scripts\\activate`
