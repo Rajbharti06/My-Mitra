@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 
 function HabitForm({ createHabit }) {
   const [name, setName] = useState('');
+  const [description, setDescription] = useState('');
   const [frequency, setFrequency] = useState('daily');
   const [isLoading, setIsLoading] = useState(false);
 
@@ -9,8 +10,9 @@ function HabitForm({ createHabit }) {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await createHabit(name, frequency);
+      await createHabit(name, frequency, description || null);
       setName('');
+      setDescription('');
       setFrequency('daily');
     } catch (error) {
       // The parent component will handle the error display
@@ -22,6 +24,7 @@ function HabitForm({ createHabit }) {
   return (
     <form onSubmit={handleSubmit} style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Add a habit (e.g., 5-min breath)" style={input} />
+      <input value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Optional description (e.g., 3 deep breaths)" style={input} />
       <select value={frequency} onChange={(e) => setFrequency(e.target.value)} style={select}>
         <option value="daily">Daily</option>
         <option value="weekly">Weekly</option>

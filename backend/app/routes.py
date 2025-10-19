@@ -1,30 +1,19 @@
 from fastapi import APIRouter, Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
-from typing import Optional, Any
+from typing import Optional, Any, List
 from pydantic import BaseModel
 import os
+import uuid
 
 from . import crud, models, schemas, security
 from .database import SessionLocal
-from .. import encryption_utils
-from ..llm.model import MyMitraModel
-from ..llm.cbt_logic import CBTLogic
-from ..vector_memory import LongTermMemory
-from .chat_pipeline import get_mitra_reply
+import sys
+import os
+sys.path.append(os.path.dirname(os.path.dirname(__file__)))
+import encryption_utils
+from .enhanced_chat_pipeline import enhanced_chat_pipeline
 
 router = APIRouter()
-
-# Determine echo-only mode for AI components only
-ECHO_ONLY = os.environ.get("MYMITRA_ECHO_ONLY") == "1"
-
-if not ECHO_ONLY:
-    my_mitra_model = MyMitraModel()
-    cbt_agent = CBTLogic(my_mitra_model)
-    long_term_memory = LongTermMemory()
-else:
-    my_mitra_model = None
-    cbt_agent = None
-    long_term_memory = None
 
 def get_db():
     db = SessionLocal()
@@ -35,37 +24,29 @@ def get_db():
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
-async def get_current_user_optional(token: str | None = Depends(oauth2_scheme), db: Any = Depends(get_db)):
-    if not token:
-        return None
-    try:
-        token_data = security.verify_token(token, HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Could not validate credentials",
-            headers={"WWW-Authenticate": "Bearer"},
+async def get_current_user_optional(db: Any = Depends(get_db)):
+    # Return a default user for open access
+    default_user = crud.get_user(db, "default_user")
+    if not default_user:
+        # Create a default user if it doesn't exist
+        default_user = crud.create_user(db, schemas.UserCreate(
+            username="default_user",
+            email="default@example.com",
+            password="default"
         ))
-        user = crud.get_user(db, username=token_data.username)
-        return user
-    except Exception:
-        return None
+    return default_user
 
-async def get_current_user_required(token: str | None = Depends(oauth2_scheme), db: Any = Depends(get_db)):
-    if token is None:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Not authenticated",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    credentials_exception = HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Could not validate credentials",
-        headers={"WWW-Authenticate": "Bearer"},
-    )
-    token_data = security.verify_token(token, credentials_exception)
-    user = crud.get_user(db, username=token_data.username)
-    if user is None:
-        raise credentials_exception
-    return user
+async def get_current_user_required(db: Any = Depends(get_db)):
+    # Return a default user for open access
+    default_user = crud.get_user(db, "default_user")
+    if not default_user:
+        # Create a default user if it doesn't exist
+        default_user = crud.create_user(db, schemas.UserCreate(
+            username="default_user",
+            email="default@example.com",
+            password="default"
+        ))
+    return default_user
 
 @router.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: "Session" = Depends(get_db)):
@@ -88,14 +69,71 @@ def create_user(user: "schemas.UserCreate", db: "Session" = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Username already registered")
     return crud.create_user(db=db, user=user)
 
-class Message(BaseModel):
-    user_input: str
+@router.post("/chat/", response_model=dict)
+async def chat_with_mymitra(
+    message: schemas.ChatMessageCreate, 
+    current_user = Depends(get_current_user_optional),
+    db: Any = Depends(get_db)
+):
+    """
+    Chat with My Mitra AI with personality support.
+    Supports both authenticated and anonymous users.
+    """
+    # Generate session ID if not provided
+    session_id = message.session_id or str(uuid.uuid4())
+    
+    # Get AI response using enhanced pipeline
+    result = enhanced_chat_pipeline.get_mitra_reply(
+        user_input=message.message,
+        user_id=current_user.id if current_user else None,
+        db=db if current_user else None,
+        personality=message.personality,
+        session_id=session_id
+    )
+    
+    return {
+        "response": result["response"],
+        "personality_used": result["personality_used"],
+        "session_id": result["session_id"],
+        "memory_used": result.get("memory_used", False),
+        "personality_info": result.get("personality_info", {}),
+        "user_authenticated": current_user is not None
+    }
 
-@router.post("/chat/")
-async def chat_with_mymitra(message: Message, current_user = Depends(get_current_user_optional)):
-    user_id = current_user.username if current_user else "anonymous"
-    reply = get_mitra_reply(user_id=user_id, user_message=message.user_input)
-    return {"response": reply}
+@router.post("/chat/personality", response_model=dict)
+async def switch_personality(
+    personality_data: schemas.PersonalitySwitch,
+    current_user = Depends(get_current_user_optional),
+    db: Any = Depends(get_db)
+):
+    """Switch AI personality mode."""
+    result = enhanced_chat_pipeline.switch_personality(
+        personality=personality_data.personality,
+        user_id=current_user.id if current_user else None,
+        db=db if current_user else None
+    )
+    return result
+
+@router.get("/chat/personalities", response_model=List[schemas.PersonalityInfo])
+async def get_available_personalities():
+    """Get list of available AI personalities."""
+    return enhanced_chat_pipeline.get_available_personalities()
+
+@router.get("/chat/history")
+async def get_chat_history(
+    limit: int = 20,
+    current_user = Depends(get_current_user_required),
+    db: Any = Depends(get_db)
+):
+    """Get user's chat history (requires authentication)."""
+    try:
+        messages = crud.get_recent_chat_history(db, current_user.id, limit)
+        return {
+            "messages": messages,
+            "total": len(messages)
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error retrieving chat history: {str(e)}")
 
 @router.post("/journal/")
 async def create_journal_entry(journal: schemas.JournalCreate, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
@@ -129,8 +167,15 @@ async def get_user_insights(db: "Session" = Depends(get_db), current_user=Depend
 @router.post("/habits", response_model=schemas.Habit)
 def create_habit(habit: "schemas.HabitCreate", db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
     obj = crud.create_habit(db, user_id=current_user.id, habit=habit)
-    if long_term_memory:
-        long_term_memory.add_memory(f"New habit created: {habit.title} - {habit.description}", {"session_id": current_user.username, "type": "habit_creation"})
+    # Log in long-term memory if available
+    try:
+        if enhanced_chat_pipeline.long_term_memory:
+            enhanced_chat_pipeline.long_term_memory.add_memory(
+                f"New habit created: {habit.title} - {habit.description}",
+                {"session_id": current_user.username, "type": "habit_creation"}
+            )
+    except Exception:
+        pass
     return obj
 
 @router.get("/habits", response_model=list[schemas.Habit])
@@ -139,35 +184,38 @@ def list_habits(db: "Session" = Depends(get_db), current_user=Depends(get_curren
 
 @router.post("/habits/{habit_id}/complete")
 def complete_habit(habit_id: int, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
-    habit = db.query(models.Habit).filter(models.Habit.id == habit_id, models.Habit.user_id == current_user.id).first()
-    if not habit:
+    result = crud.complete_habit(db, user_id=current_user.id, habit_id=habit_id)
+    if result is None:
         raise HTTPException(status_code=404, detail="Habit not found")
-    
-    from datetime import datetime
-    today = datetime.now()
-    
-    if habit.last_completed and habit.last_completed.date() == today.date():
-        return {"message": "Already completed today"}
-    
-    if habit.last_completed and (today - habit.last_completed).days == 1:
-        habit.streak_count += 1
-    elif not habit.last_completed or (today - habit.last_completed).days > 1:
-        habit.streak_count = 1
-    
-    habit.last_completed = today
-    db.commit()
-    return {"message": "Habit completed!", "streak": habit.streak_count}
+    return result
+
+@router.put("/habits/{habit_id}", response_model=schemas.Habit)
+def update_habit(habit_id: int, habit_update: schemas.HabitUpdate, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+    updated = crud.update_habit(db, user_id=current_user.id, habit_id=habit_id, habit_update=habit_update)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Habit not found")
+    return updated
 
 @router.post("/journals", response_model=schemas.Journal)
 def create_journal(journal: "schemas.JournalCreate", db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
     obj = crud.create_journal(db, user_id=current_user.id, journal=journal)
-    if long_term_memory:
-        long_term_memory.add_memory(f"New journal entry: {journal.content}", {"session_id": current_user.username, "type": "journal_entry", "mood": journal.mood})
+    try:
+        if enhanced_chat_pipeline.long_term_memory:
+            enhanced_chat_pipeline.long_term_memory.add_memory(
+                f"New journal entry: {journal.content}",
+                {"session_id": current_user.username, "type": "journal_entry", "mood": journal.mood}
+            )
+    except Exception:
+        pass
     return schemas.Journal(id=obj.id, user_id=obj.user_id, content=journal.content)
 
 @router.get("/journals", response_model=list[schemas.Journal])
 def list_journals(db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
     return crud.list_journals(db, user_id=current_user.id)
+
+@router.get("/habits/insights")
+def habit_insights(db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+    return crud.get_habit_insights(db, user_id=current_user.id)
 
 @router.get("/health")
 async def health_check():
@@ -218,3 +266,10 @@ def export_data(db: "Session" = Depends(get_db), current_user=Depends(get_curren
     encrypted_data = encryption_utils.encrypt_data(str(export_data))
 
     return {"encrypted_data": encrypted_data}
+
+@router.delete("/habits/{habit_id}")
+def delete_habit(habit_id: int, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+    success = crud.delete_habit(db, user_id=current_user.id, habit_id=habit_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Habit not found")
+    return {"deleted": True}

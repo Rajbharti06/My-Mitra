@@ -2,8 +2,6 @@ import React, { useState, useEffect } from 'react';
 import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
 import './App.css';
 import Chat from './Chat';
-// import Login from './Login';
-import Register from './Register';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
 // import Home from './pages/Home';
@@ -11,14 +9,6 @@ import Journals from './pages/Journals';
 import Habits from './pages/Habits';
 import NotFound from './pages/NotFound';
 import Insights from './pages/Insights';
-
-const isAuthenticated = () => {
-  return true; // Always authenticated
-};
-
-const PrivateRoute = ({ children }) => {
-  return children;
-};
 
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
@@ -41,12 +31,10 @@ function App() {
         <Navbar darkMode={darkMode} setDarkMode={setDarkMode} />
         <main style={{ flexGrow: 1 }}>
           <Routes>
-            {/* <Route path="/login" element={<Login />} /> */}
-            <Route path="/register" element={<Register />} />
             <Route path="/chat" element={<Chat />} />
-            <Route path="/journals" element={<PrivateRoute><Journals /></PrivateRoute>} />
-            <Route path="/habits" element={<PrivateRoute><Habits /></PrivateRoute>} />
-            <Route path="/insights" element={<PrivateRoute><Insights /></PrivateRoute>} />
+            <Route path="/journals" element={<Journals />} />
+            <Route path="/habits" element={<Habits />} />
+            <Route path="/insights" element={<Insights />} />
             <Route path="/" element={<Navigate to="/chat" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>

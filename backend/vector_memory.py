@@ -2,7 +2,7 @@ import os
 import datetime
 import chromadb
 from chromadb.utils import embedding_functions
-from . import encryption_utils
+import encryption_utils
 
 class LongTermMemory:
     def __init__(self, collection_name="mymitra_memory", persist_directory="./chroma_db"):

@@ -3,6 +3,7 @@ import './Chat.css';
 import ConversationalCard from './components/ConversationalCard'; // Import the new component
 import CryptoJS from 'crypto-js';
 import * as api from './services/api';
+import { setPassphrase, getPassphrase, hasPassphrase } from './services/security';
 
 function Chat() {
   const [messages, setMessages] = useState([]);
@@ -10,17 +11,27 @@ function Chat() {
   const [isTyping, setIsTyping] = useState(false);
   const [error, setError] = useState(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [currentPersonality, setCurrentPersonality] = useState(() => localStorage.getItem('defaultPersonality') || 'default');
+  const [availablePersonalities, setAvailablePersonalities] = useState([]);
+  const [preferencesOpen, setPreferencesOpen] = useState(false);
+  const [localPassphraseInput, setLocalPassphraseInput] = useState('');
+  const [sessionId] = useState(() => {
+    const existing = localStorage.getItem('sessionId');
+    if (existing) return existing;
+    const newId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : Math.random().toString(36).slice(2);
+    localStorage.setItem('sessionId', newId);
+    return newId;
+  });
   const chatWindowRef = useRef(null);
 
-  const ENCRYPTION_KEY = 'my_mitra_secret_key'; // In production, use a user-specific key or passphrase
-
   const encryptData = (data) => {
-    return CryptoJS.AES.encrypt(JSON.stringify(data), ENCRYPTION_KEY).toString();
+    if (!hasPassphrase()) return null;
+    return CryptoJS.AES.encrypt(JSON.stringify(data), getPassphrase()).toString();
   };
   
   const decryptData = (ciphertext) => {
     try {
-      const bytes = CryptoJS.AES.decrypt(ciphertext, ENCRYPTION_KEY);
+      const bytes = CryptoJS.AES.decrypt(ciphertext, getPassphrase() || '');
       const decrypted = bytes.toString(CryptoJS.enc.Utf8);
       return JSON.parse(decrypted);
     } catch {
@@ -29,15 +40,21 @@ function Chat() {
   };
   
   const saveMessageToLocalStorage = (message) => {
+    if (!hasPassphrase()) {
+      setMessages(prev => [...prev, { sender: 'system', text: 'Offline message not saved. Set encryption passphrase in Preferences to enable secure offline queue.', timestamp: new Date().toISOString(), isError: true }]);
+      return;
+    }
     const storedCipher = localStorage.getItem('offlineMessages');
-    const storedMessages = storedCipher ? decryptData(storedCipher) : [];
+    const storedMessages = storedCipher ? (decryptData(storedCipher) || []) : [];
     const newCipher = encryptData([...storedMessages, message]);
-    localStorage.setItem('offlineMessages', newCipher);
+    if (newCipher) localStorage.setItem('offlineMessages', newCipher);
   };
   
   const getOfflineMessages = () => {
+    if (!hasPassphrase()) return [];
     const storedCipher = localStorage.getItem('offlineMessages');
-    return storedCipher ? decryptData(storedCipher) : [];
+    const decrypted = storedCipher ? decryptData(storedCipher) : null;
+    return Array.isArray(decrypted) ? decrypted : [];
   };
   
   const clearOfflineMessages = () => {
@@ -63,10 +80,8 @@ function Chat() {
     if (isOnline) {
       const offlineMessages = getOfflineMessages();
       if (offlineMessages.length > 0) {
-        // Optionally, display a message to the user that offline messages are being sent
         setMessages(prevMessages => [...prevMessages, { sender: 'system', text: "Sending queued offline messages...", timestamp: new Date().toISOString() }]);
         offlineMessages.forEach(async (msg) => {
-          // Re-send each message. This might need a more robust retry mechanism.
           await sendMessage(msg.text, true); // Pass true to indicate it's a re-sent message
         });
         clearOfflineMessages();
@@ -79,6 +94,37 @@ function Chat() {
       chatWindowRef.current.scrollTop = chatWindowRef.current.scrollHeight;
     }
   }, [messages, isTyping]);
+
+  useEffect(() => {
+    // Load available personalities on component mount
+    const loadPersonalities = async () => {
+      try {
+        const personalities = await api.getAvailablePersonalities();
+        setAvailablePersonalities(personalities);
+      } catch (error) {
+        console.error('Error loading personalities:', error);
+      }
+    };
+    loadPersonalities();
+    // Load recent chat history for continuity
+    const loadHistory = async () => {
+      try {
+        const resp = await api.getChatHistory(50);
+        const history = Array.isArray(resp?.messages) ? resp.messages : [];
+        const mapped = history.map((m) => ({
+          sender: m.role === 'assistant' ? 'ai' : (m.role === 'user' ? 'user' : 'system'),
+          text: m.content,
+          timestamp: new Date().toISOString()
+        }));
+        if (mapped.length) {
+          setMessages(mapped);
+        }
+      } catch (error) {
+        console.error('Error loading chat history:', error);
+      }
+    };
+    loadHistory();
+  }, []);
 
   const sendMessage = async (messageText = input, isResending = false) => {
     if (!messageText.trim()) return;
@@ -103,7 +149,7 @@ function Chat() {
     }
 
     try {
-      const data = await api.sendMessage(messageText);
+      const data = await api.sendMessage(messageText, currentPersonality, sessionId);
       const timestamp = new Date().toISOString();
       const newMessages = [];
 
@@ -135,14 +181,120 @@ function Chat() {
     }
   };
 
+  const handlePersonalitySwitch = async (personality) => {
+    try {
+      await api.switchPersonality(personality);
+      setCurrentPersonality(personality);
+      localStorage.setItem('defaultPersonality', personality);
+      const systemMessage = {
+        sender: 'system',
+        text: `Switched to ${personality} personality`,
+        timestamp: new Date().toISOString()
+      };
+      setMessages(prevMessages => [...prevMessages, systemMessage]);
+    } catch (error) {
+      console.error('Error switching personality:', error);
+      setError(`Failed to switch to ${personality} personality`);
+    }
+  };
+
   return (
     <div className="chat-container">
       <div style={{ padding: '8px 16px', borderBottom: '1px solid #e6e9ef', background: '#fff' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <span style={{ fontSize: '14px', fontWeight: '500', color: '#666' }}>Personality:</span>
+            {availablePersonalities.map((p) => (
+              <button
+                key={p.type}
+                onClick={() => handlePersonalitySwitch(p.type)}
+                style={{
+                  border: currentPersonality === p.type ? '2px solid #3a6ea5' : '1px solid #cdd6e1',
+                  background: currentPersonality === p.type ? '#3a6ea5' : '#ffffff',
+                  color: currentPersonality === p.type ? '#ffffff' : '#3a6ea5',
+                  borderRadius: 16,
+                  padding: '4px 12px',
+                  cursor: 'pointer',
+                  fontSize: '12px',
+                  fontWeight: '500',
+                  textTransform: 'capitalize'
+                }}
+              >
+                {p.name || p.type}
+              </button>
+            ))}
+            <button
+              onClick={() => setPreferencesOpen(v => !v)}
+              style={{
+                border: '1px solid #cdd6e1',
+                background: '#ffffff',
+                color: '#3a6ea5',
+                borderRadius: 16,
+                padding: '4px 10px',
+                cursor: 'pointer',
+                fontSize: '12px',
+                fontWeight: 500
+              }}
+            >
+              Preferences
+            </button>
+          </div>
+        </div>
+        {!hasPassphrase() && (
+          <div style={{ marginTop: 8, padding: '8px 12px', border: '1px solid #e6e9ef', borderRadius: 12, background: '#fff', color: '#7a8a9e' }}>
+            Set an encryption passphrase in Preferences to save offline messages securely.
+          </div>
+        )}
         <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-          {['I’m feeling stressed about exams', 'Can you help me sleep better?', 'I had a tough day', 'Let’s plan a tiny habit'].map((q) => (
-            <button key={q} onClick={() => setInput(q)} style={{ border: '1px solid #cdd6e1', background: '#ffffff', color: '#3a6ea5', borderRadius: 16, padding: '6px 10px', cursor: 'pointer' }}>{q}</button>
+          {["I'm feeling stressed about exams", "Can you help me sleep better?", "I had a tough day", "Let's plan a tiny habit"].map((q) => (
+            <button 
+              key={q} 
+              onClick={() => setInput(q)} 
+              style={{ 
+                border: '1px solid #cdd6e1', 
+                background: '#ffffff', 
+                color: '#3a6ea5', 
+                borderRadius: 16, 
+                padding: '6px 10px', 
+                cursor: 'pointer' 
+              }}
+            >
+              {q}
+            </button>
           ))}
         </div>
+        {preferencesOpen && (
+          <div style={{ marginTop: 8, padding: '8px 12px', border: '1px solid #e6e9ef', borderRadius: 12, background: '#fff', display: 'flex', gap: 16, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: '#666' }}>Default personality:</span>
+              <select
+                value={currentPersonality}
+                onChange={(e) => handlePersonalitySwitch(e.target.value)}
+                style={{ border: '1px solid #cdd6e1', borderRadius: 8, padding: '4px 8px', color: '#3a6ea5' }}
+              >
+                {availablePersonalities.map((p) => (
+                  <option key={p.type} value={p.type}>{p.name || p.type}</option>
+                ))}
+              </select>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+              <span style={{ fontSize: 12, color: '#666' }}>Encryption passphrase:</span>
+              <input
+                type="password"
+                value={localPassphraseInput}
+                onChange={(e) => setLocalPassphraseInput(e.target.value)}
+                placeholder="Set passphrase"
+                style={{ border: '1px solid #cdd6e1', borderRadius: 8, padding: '4px 8px' }}
+              />
+              <button
+                onClick={() => setPassphrase(localPassphraseInput)}
+                style={{ border: '1px solid #3a6ea5', background: '#3a6ea5', color: '#fff', borderRadius: 8, padding: '4px 8px', cursor: 'pointer' }}
+              >
+                Save
+              </button>
+            </div>
+          </div>
+        )}
       </div>
       <div className="chat-window" ref={chatWindowRef}>
         {messages.map((msg, index) => (
@@ -202,28 +354,6 @@ function Chat() {
       </div>
       <div className="input-area">
         {error && <div className="error-message">{error}</div>}
-        <div className="quick-prompts">
-          {[
-            "How are you feeling today?",
-            "I'm feeling anxious about work",
-            "Help me challenge negative thoughts",
-            "I want to practice gratitude",
-            "I'm having trouble sleeping",
-            "Help me with social anxiety",
-            "I feel overwhelmed",
-            "Teach me breathing exercises",
-            "I want to build better habits",
-            "Help me with self-compassion"
-          ].map((prompt, index) => (
-            <button
-              key={index}
-              onClick={() => setInput(prompt)}
-              className="prompt-chip"
-            >
-              {prompt}
-            </button>
-          ))}
-        </div>
         <div className="input-container">
           <input
             type="text"

@@ -1,10 +1,24 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import * as api from '../services/api';
 import HabitForm from '../components/HabitForm';
+import { enqueueHabit, drainHabitsQueue } from '../services/offlineQueue';
+import { hasPassphrase } from '../services/security';
 
 function Habits() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
+  const [isOnline, setIsOnline] = useState(navigator.onLine);
+
+  useEffect(() => {
+    const handleOnline = () => setIsOnline(true);
+    const handleOffline = () => setIsOnline(false);
+    window.addEventListener('online', handleOnline);
+    window.addEventListener('offline', handleOffline);
+    return () => {
+      window.removeEventListener('online', handleOnline);
+      window.removeEventListener('offline', handleOffline);
+    };
+  }, []);
 
   const fetchList = useCallback(async () => {
     try {
@@ -15,10 +29,29 @@ function Habits() {
     }
   }, []);
 
-  const createHabit = async (name, frequency) => {
+  useEffect(() => { fetchList(); }, [fetchList]);
+
+  useEffect(() => {
+    if (isOnline) {
+      drainHabitsQueue().then(fetchList).catch(() => {});
+    }
+  }, [isOnline, fetchList]);
+
+  const createHabit = async (name, frequency, description = null) => {
     setError('');
+    if (!isOnline) {
+      if (!hasPassphrase()) {
+        setError('Set encryption passphrase in Chat Preferences to enable secure offline queue.');
+        throw new Error('Passphrase not set');
+      }
+      const ok = enqueueHabit(name, frequency, description);
+      if (ok) {
+        setItems(prev => [...prev, { id: Math.random().toString(36).slice(2), title: name, frequency, description, streak_count: 0 }]);
+      }
+      return;
+    }
     try {
-      await api.createHabit(name, frequency);
+      await api.createHabit(name, frequency, description);
       // Request notification permission and schedule notification
       if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().then(permission => {
@@ -46,8 +79,6 @@ function Habits() {
     }
   };
 
-  useEffect(() => { fetchList(); }, [fetchList]);
-
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: 20 }}>
       <h2 style={{ color: '#204b72' }}>Habits</h2>
@@ -61,6 +92,9 @@ function Habits() {
               <span>Streak: {it.streak_count || 0} 🔥</span>
             </div>
             <div style={{ fontWeight: 700 }}>{it.title}</div>
+            {it.description && (
+              <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>{it.description}</div>
+            )}
             <div style={{ fontSize: 12, color: '#7a8a9e' }}>{it.frequency}</div>
             <button 
               onClick={async () => {

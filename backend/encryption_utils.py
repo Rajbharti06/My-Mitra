@@ -1,8 +1,17 @@
 from Crypto.Cipher import AES
 import base64
 import os
+from dotenv import load_dotenv
 
-KEY = os.getenv("AES_KEY", "32_byte_random_key_here!!")  # Store securely
+# Load environment variables (ensure backend .env is used and overrides any existing values)
+load_dotenv(dotenv_path=os.path.join(os.path.dirname(__file__), ".env"), override=True)
+
+# Get encryption key from environment
+KEY = os.getenv("ENCRYPTION_KEY", "mymitra-encryption-key-32chars!!").strip()
+
+# Validate key length
+if len(KEY) != 32:
+    raise ValueError(f"ENCRYPTION_KEY must be exactly 32 characters long! Current length: {len(KEY)}")
 
 def encrypt_data(data: str) -> str:
     cipher = AES.new(KEY.encode(), AES.MODE_EAX)

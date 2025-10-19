@@ -1,15 +1,8 @@
 import React from 'react';
-import { Link, useNavigate, useLocation } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 
 function Navbar({ darkMode, setDarkMode }) {
-  const navigate = useNavigate();
   const location = useLocation();
-  const isAuthed = localStorage.getItem('token') !== null;
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    navigate('/login');
-  };
 
   return (
     <nav style={{
@@ -23,9 +16,9 @@ function Navbar({ darkMode, setDarkMode }) {
         </Link>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginLeft: 8 }}>
           <Link to="/chat" style={linkStyle(location.pathname === '/chat')}>Chat</Link>
-          {isAuthed && <Link to="/journals" style={linkStyle(location.pathname === '/journals')}>Journals</Link>}
-          {isAuthed && <Link to="/habits" style={linkStyle(location.pathname === '/habits')}>Habits</Link>}
-          {isAuthed && <Link to="/insights" style={linkStyle(location.pathname === '/insights')}>Insights</Link>}
+          <Link to="/journals" style={linkStyle(location.pathname === '/journals')}>Journals</Link>
+          <Link to="/habits" style={linkStyle(location.pathname === '/habits')}>Habits</Link>
+          <Link to="/insights" style={linkStyle(location.pathname === '/insights')}>Insights</Link>
         </div>
       </div>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -44,14 +37,7 @@ function Navbar({ darkMode, setDarkMode }) {
         >
           {darkMode ? '☀️' : '🌙'}
         </button>
-        {!isAuthed ? (
-          <>
-            <Link to="/login" style={buttonGhost}>Log in</Link>
-            <Link to="/register" style={buttonPrimary}>Get started</Link>
-          </>
-        ) : (
-          <button onClick={handleLogout} style={buttonGhost}>Log out</button>
-        )}
+
       </div>
     </nav>
   );

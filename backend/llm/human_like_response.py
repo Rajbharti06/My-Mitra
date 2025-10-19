@@ -310,11 +310,11 @@ class HumanLikeResponseEnhancer:
             words.insert(hesitation_pos, hesitation)
             enhanced = ' '.join(words)
         
-        # Ensure the response doesn't get too long
-        if len(enhanced.split()) > 60:
-            # Trim back to original length + some enhancements
+        # Keep very large responses reasonable without cutting normal replies
+        # Only trim if the response is extremely long (e.g., > 400 words)
+        if len(enhanced.split()) > 400:
             words = enhanced.split()
-            enhanced = ' '.join(words[:50]) + '...'
+            enhanced = ' '.join(words[:380]) + '...'
         
         # Clean up any double spaces or weird formatting that might have been introduced
         enhanced = ' '.join(enhanced.split())
