@@ -1,0 +1,32 @@
+.footer {
+  border-top: 1px solid var(--mm-border);
+  padding: 24px 20px;
+  background: var(--mm-surface);
+  color: var(--mm-muted);
+  text-align: center;
+}
+
+.footer-inner {
+  max-width: 900px;
+  margin: 0 auto;
+}
+
+.footer-text {
+  margin: 0;
+}
+
+.footer .primary {
+  margin-top: 10px;
+  padding: 8px 15px;
+  background-color: var(--mm-primary);
+  color: white;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 0.9em;
+  transition: background-color 0.2s ease;
+}
+
+.footer .primary:hover {
+  background-color: var(--mm-primary-hover);
+}

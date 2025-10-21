@@ -1,4 +1,5 @@
 import React from 'react';
+import './Footer.css';
 
 function Footer() {
   const handleDownloadData = async () => {
@@ -42,31 +43,10 @@ function Footer() {
   };
 
   return (
-    <footer style={{
-      borderTop: '1px solid #e6e9ef',
-      padding: '24px 20px',
-      background: '#ffffff',
-      color: '#5f6b7a',
-      textAlign: 'center'
-    }}>
-      <div style={{ maxWidth: 900, margin: '0 auto' }}>
-        <p style={{ margin: 0 }}>Built with care. Your privacy comes first.</p>
-        <button 
-          onClick={handleDownloadData}
-          style={{
-            marginTop: '10px',
-            padding: '8px 15px',
-            backgroundColor: '#3a6ea5',
-            color: 'white',
-            border: 'none',
-            borderRadius: '8px',
-            cursor: 'pointer',
-            fontSize: '0.9em',
-            transition: 'background-color 0.2s ease'
-          }}
-        >
-          Download Your Encrypted Data
-        </button>
+    <footer className="footer">
+      <div className="footer-inner">
+        <p className="footer-text">Built with care. Your privacy comes first.</p>
+        <button onClick={handleDownloadData} className="primary">Download Your Encrypted Data</button>
       </div>
     </footer>
   );

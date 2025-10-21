@@ -8,8 +8,27 @@
   margin: 0;
   background-color: #f5f7fa;
   color: #333;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   overflow: hidden;
+}
+
+.chat-toolbar {
+  padding: 8px 16px;
+  border-bottom: 1px solid var(--mm-border);
+  background: var(--mm-surface);
+}
+
+.toolbar-inner {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
+.toolbar-label {
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--mm-muted);
 }
 
 .chat-window {
@@ -72,6 +91,7 @@
   white-space: pre-wrap;
   font-size: 1rem;
   font-weight: 400;
+  box-shadow: var(--mm-shadow);
 }
 
 .message.user .message-bubble {
@@ -81,6 +101,14 @@
 .message.ai .message-bubble,
 .message.cbt .message-bubble {
   background: #ffffff;
+}
+
+.preferences-panel {
+  border: 1px solid var(--mm-border);
+  background: var(--mm-surface);
+  border-radius: 12px;
+  padding: 12px;
+  box-shadow: var(--mm-shadow);
 }
 
 .input-area {
@@ -113,7 +141,7 @@
   color: #204b72;
   cursor: pointer;
   transition: all 0.2s ease;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .prompt-chip:hover {
@@ -123,7 +151,7 @@
 }
 
 .error-message {
-  color: #d9534f;
+  color: var(--mm-danger);
   text-align: center;
   font-size: 0.9rem;
   padding: 0.5rem;
@@ -152,7 +180,7 @@
   outline: none;
   box-shadow: 0 0 8px rgba(163, 177, 194, 0.25);
   transition: border-color 0.2s;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .input-area input:disabled {
@@ -167,7 +195,7 @@
 
 .input-area button {
   border: none;
-  background-color: #4a90e2;
+  background-color: var(--mm-primary);
   color: #fff;
   border-radius: 16px;
   padding: 12px 16px;
@@ -181,7 +209,7 @@
   height: 44px;
   font-weight: 600;
   font-size: 1rem;
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  font-family: 'Inter', 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
 }
 
 .input-area button:disabled {
@@ -190,7 +218,7 @@
 }
 
 .input-area button:hover:not(:disabled) {
-  background-color: #357ABD;
+  background-color: var(--mm-primary-hover);
 }
 
 .button-spinner {
