@@ -1,0 +1,50 @@
+.mood-ring-container {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin: 5px;
+}
+
+.mood-ring {
+  border-radius: 50%;
+  box-shadow: 0 0 15px rgba(0, 0, 0, 0.2), inset 0 0 8px rgba(255, 255, 255, 0.5);
+  background-image: linear-gradient(135deg, rgba(255, 255, 255, 0.2) 0%, rgba(0, 0, 0, 0.2) 100%);
+  transition: background-color 0.5s ease;
+}
+
+.mood-ring.pulse {
+  animation: pulse-animation ease-in-out infinite;
+}
+
+.mood-label {
+  margin-top: 8px;
+  font-size: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: #555;
+  text-transform: capitalize;
+}
+
+.intensity-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+@keyframes pulse-animation {
+  0% {
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2), inset 0 0 8px rgba(255, 255, 255, 0.5);
+    transform: scale(1);
+  }
+  50% {
+    box-shadow: 0 0 20px currentColor, inset 0 0 12px rgba(255, 255, 255, 0.7);
+    transform: scale(1.05);
+  }
+  100% {
+    box-shadow: 0 0 15px rgba(0, 0, 0, 0.2), inset 0 0 8px rgba(255, 255, 255, 0.5);
+    transform: scale(1);
+  }
+}

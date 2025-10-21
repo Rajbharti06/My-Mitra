@@ -47,6 +47,34 @@ class PersonalityInfo(BaseModel):
 class PersonalitySwitch(BaseModel):
     personality: str
 
+# --- Emotion Schemas ---
+class EmotionAnalysisRequest(BaseModel):
+    """Request schema for emotion analysis"""
+    text: str
+    user_id: Optional[int] = None
+    source_type: str = "chat"
+
+class EmotionResponse(BaseModel):
+    """Response schema for emotion analysis"""
+    primary_emotion: str
+    primary_intensity: str
+    confidence: float
+    sentiment: dict
+    response_text: Optional[str] = None
+    timestamp: Optional[datetime] = None
+    source_type: Optional[str] = None
+    
+    model_config = ConfigDict(from_attributes=True)
+
+class EmotionInsightResponse(BaseModel):
+    """Response schema for emotion insights"""
+    time_period: str
+    dominant_emotion: Optional[str] = None
+    emotion_distribution: dict
+    insight_text: str
+    
+    model_config = ConfigDict(from_attributes=True)
+
 # --- Habit Schemas ---
 class HabitBase(BaseModel):
     title: str

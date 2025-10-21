@@ -91,6 +91,38 @@ async def chat_with_mymitra(
         session_id=session_id
     )
     
+    # Analyze emotion if user is authenticated
+    if current_user:
+        try:
+            from core.emotion_engine import analyze_emotion
+            emotion_result = analyze_emotion(message.message)
+            
+            # Store emotion record
+            emotion_record = models.EmotionRecord(
+                user_id=current_user.id,
+                primary_emotion=emotion_result.category.value,
+                primary_intensity=emotion_result.intensity.value,
+                confidence=emotion_result.confidence,
+                sentiment_polarity=emotion_result.sentiment_scores.get("polarity", 0),
+                sentiment_subjectivity=emotion_result.sentiment_scores.get("subjectivity", 0),
+                detection_method=emotion_result.detection_method,
+                source_text=message.message,
+                source_type="chat"
+            )
+            db.add(emotion_record)
+            db.commit()
+            
+            # Add emotion data to response
+            result["emotion_detected"] = {
+                "primary_emotion": emotion_result.category.value,
+                "intensity": emotion_result.intensity.value,
+                "confidence": emotion_result.confidence
+            }
+        except Exception as e:
+            # Log error but don't fail the chat request
+            print(f"Error in emotion detection: {e}")
+            pass
+    
     return {
         "response": result["response"],
         "personality_used": result["personality_used"],

@@ -1,6 +1,7 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean
+from sqlalchemy import Column, Integer, String, Text, Boolean, Float
 from .database import Base
 from sqlalchemy import ForeignKey, LargeBinary, DateTime, func, UniqueConstraint
+from sqlalchemy.orm import relationship
 
 class User(Base):
     __tablename__ = "users"
@@ -13,6 +14,10 @@ class User(Base):
     role = Column(String, default="user")  # user, admin, moderator
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Relationships
+    emotion_records = relationship("EmotionRecord", back_populates="user")
+    emotion_insights = relationship("EmotionInsight", back_populates="user")
 
 class ChatMessage(Base):
     __tablename__ = "chat_messages"
@@ -48,6 +53,50 @@ class Journal(Base):
     mood = Column(Integer)  # 1-10 scale
     tags = Column(String, nullable=True)  # Comma-separated tags
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+class EmotionRecord(Base):
+    """Model for storing user emotion records over time"""
+    __tablename__ = "emotion_records"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    timestamp = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Primary emotion data
+    primary_emotion = Column(String, nullable=False)
+    primary_intensity = Column(String, nullable=False)
+    confidence = Column(Float, nullable=False)
+    
+    # Additional data
+    sentiment_polarity = Column(Float)
+    sentiment_subjectivity = Column(Float)
+    detection_method = Column(String)
+    
+    # Source of the emotion detection
+    source_text = Column(Text)
+    source_type = Column(String, default="chat")  # chat, journal, etc.
+    
+    # Relationships
+    user = relationship("User", back_populates="emotion_records")
+
+class EmotionInsight(Base):
+    """Model for storing generated insights about user emotions"""
+    __tablename__ = "emotion_insights"
+    
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"))
+    generated_at = Column(DateTime(timezone=True), server_default=func.now())
+    
+    # Insight data
+    time_period = Column(String)  # day, week, month
+    insight_text = Column(Text, nullable=False)
+    
+    # Emotion statistics
+    dominant_emotion = Column(String)
+    emotion_distribution = Column(Text)  # JSON string of emotion distribution
+    
+    # Relationships
+    user = relationship("User", back_populates="emotion_insights")
 
 class UserSettings(Base):
     __tablename__ = "user_settings"

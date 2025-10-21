@@ -12,6 +12,7 @@ import sys
 from . import models
 from .database import engine
 from .routes import router
+from .routers.emotions import router as emotions_router
 from .config import settings
 import sys
 import os
@@ -110,6 +111,9 @@ app.include_router(personality_router, prefix="/api/v1")
 # Include admin routes
 from .admin_routes import router as admin_router
 app.include_router(admin_router, prefix="/api/v1")
+
+# Include emotion analysis routes
+app.include_router(emotions_router, prefix="/api/v1")
 
 # Root endpoint
 @app.get("/")

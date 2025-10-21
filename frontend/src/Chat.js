@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import './Chat.css';
 import ConversationalCard from './components/ConversationalCard'; // Import the new component
+import MoodRing from './components/MoodRing'; // Import the MoodRing component
 import * as api from './services/api';
 import { setPassphrase } from './services/security';
 
@@ -14,6 +15,7 @@ function Chat() {
   const [availablePersonalities, setAvailablePersonalities] = useState([]);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [localPassphraseInput, setLocalPassphraseInput] = useState('');
+  const [currentEmotion, setCurrentEmotion] = useState({ emotion: 'neutral', intensity: 'medium' });
   const [sessionId] = useState(() => {
     const existing = localStorage.getItem('sessionId');
     if (existing) return existing;
@@ -70,6 +72,15 @@ function Chat() {
       });
       const data = await response.json();
       const aiMessage = { sender: 'ai', text: data.response, timestamp: new Date().toISOString(), card_type: data.card_type || null, card_data: data.card_data || null };
+      
+      // Update emotion if detected
+      if (data.emotion_detected) {
+        setCurrentEmotion({
+          emotion: data.emotion_detected.primary_emotion,
+          intensity: data.emotion_detected.intensity
+        });
+      }
+      
       setMessages(prev => [...prev, aiMessage]);
     } catch (err) {
       console.error(err);
@@ -115,6 +126,14 @@ function Chat() {
               </button>
             ))}
             <button onClick={() => setPreferencesOpen(v => !v)} className="persona-chip">Preferences</button>
+          </div>
+          <div className="mood-indicator">
+            <MoodRing 
+              emotion={currentEmotion.emotion} 
+              intensity={currentEmotion.intensity} 
+              size={40} 
+              showLabel={false}
+            />
           </div>
         </div>
         {preferencesOpen && (
