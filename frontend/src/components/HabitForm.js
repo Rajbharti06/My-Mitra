@@ -1,23 +1,41 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 
-function HabitForm({ createHabit }) {
+function HabitForm({ createHabit, updateHabit, habitToEdit, setHabitToEdit }) {
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [frequency, setFrequency] = useState('daily');
   const [isLoading, setIsLoading] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+
+  useEffect(() => {
+    if (habitToEdit) {
+      setName(habitToEdit.title || '');
+      setDescription(habitToEdit.description || '');
+      setFrequency(habitToEdit.frequency || 'daily');
+      setIsEditing(true);
+    } else {
+      setIsEditing(false);
+    }
+  }, [habitToEdit]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     setIsLoading(true);
     try {
-      await createHabit(name, frequency, description || null);
+      if (isEditing && habitToEdit) {
+        await updateHabit(habitToEdit.id, name, frequency, description || null);
+      } else {
+        await createHabit(name, frequency, description || null);
+      }
       setName('');
       setDescription('');
       setFrequency('daily');
+      if (setHabitToEdit) setHabitToEdit(null);
     } catch (error) {
       // The parent component will handle the error display
     } finally {
       setIsLoading(false);
+      setIsEditing(false);
     }
   };
 
@@ -31,8 +49,23 @@ function HabitForm({ createHabit }) {
         <option value="monthly">Monthly</option>
       </select>
       <button type="submit" style={button} disabled={isLoading}>
-        {isLoading ? 'Saving...' : 'Save'}
+        {isLoading ? 'Saving...' : (isEditing ? 'Update' : 'Save')}
       </button>
+      {isEditing && (
+        <button 
+          type="button" 
+          onClick={() => {
+            setName('');
+            setDescription('');
+            setFrequency('daily');
+            if (setHabitToEdit) setHabitToEdit(null);
+            setIsEditing(false);
+          }}
+          style={{...button, background: '#6c757d', border: '1px solid #6c757d'}}
+        >
+          Cancel
+        </button>
+      )}
     </form>
   );
 }

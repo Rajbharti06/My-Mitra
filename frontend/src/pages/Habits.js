@@ -3,11 +3,13 @@ import * as api from '../services/api';
 import HabitForm from '../components/HabitForm';
 import { enqueueHabit, drainHabitsQueue } from '../services/offlineQueue';
 import { hasPassphrase } from '../services/security';
+import { Edit, Trash2 } from 'lucide-react';
 
 function Habits() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
+  const [habitToEdit, setHabitToEdit] = useState(null);
 
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
@@ -78,11 +80,45 @@ function Habits() {
       throw e; // re-throw to be caught by the form
     }
   };
+  
+  const updateHabit = async (habitId, name, frequency, description = null) => {
+    setError('');
+    if (!isOnline) {
+      setError('Cannot update habits while offline');
+      throw new Error('Offline mode');
+    }
+    try {
+      await api.updateHabit(habitId, { title: name, frequency, description });
+      fetchList();
+    } catch (e) {
+      setError(e.message || 'Could not update habit');
+      throw e;
+    }
+  };
+  
+  const deleteHabit = async (habitId) => {
+    setError('');
+    if (!isOnline) {
+      setError('Cannot delete habits while offline');
+      return;
+    }
+    try {
+      await api.deleteHabit(habitId);
+      fetchList();
+    } catch (e) {
+      setError(e.message || 'Could not delete habit');
+    }
+  };
 
   return (
     <div style={{ maxWidth: 800, margin: '0 auto', padding: 20 }}>
       <h2 style={{ color: '#204b72' }}>Habits</h2>
-      <HabitForm createHabit={createHabit} />
+      <HabitForm 
+        createHabit={createHabit} 
+        updateHabit={updateHabit} 
+        habitToEdit={habitToEdit} 
+        setHabitToEdit={setHabitToEdit} 
+      />
       {error && <p style={{ color: '#c0392b' }}>{error}</p>}
       <div style={{ display: 'grid', gap: 12 }}>
         {items.map(it => (
@@ -96,27 +132,65 @@ function Habits() {
               <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>{it.description}</div>
             )}
             <div style={{ fontSize: 12, color: '#7a8a9e' }}>{it.frequency}</div>
-            <button 
-              onClick={async () => {
-                try {
-                  await api.completeHabit(it.id);
-                  fetchList();
-                } catch (e) {
-                  setError('Failed to complete habit');
-                }
-              }}
-              style={{ 
-                marginTop: 8, 
-                padding: '6px 12px', 
-                borderRadius: 6, 
-                border: '1px solid #3a6ea5', 
-                background: '#3a6ea5', 
-                color: '#fff', 
-                fontSize: 12 
-              }}
-            >
-              Complete Today
-            </button>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <button 
+                onClick={async () => {
+                  try {
+                    await api.completeHabit(it.id);
+                    fetchList();
+                  } catch (e) {
+                    setError('Failed to complete habit');
+                  }
+                }}
+                style={{ 
+                  flex: 1,
+                  padding: '6px 12px', 
+                  borderRadius: 6, 
+                  border: '1px solid #3a6ea5', 
+                  background: '#3a6ea5', 
+                  color: '#fff', 
+                  fontSize: 12 
+                }}
+              >
+                Complete Today
+              </button>
+              <button
+                onClick={() => setHabitToEdit(it)}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  border: '1px solid #4caf50',
+                  background: '#4caf50',
+                  color: '#fff',
+                  fontSize: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Edit size={14} />
+              </button>
+              <button
+                onClick={() => {
+                  if (window.confirm('Are you sure you want to delete this habit?')) {
+                    deleteHabit(it.id);
+                  }
+                }}
+                style={{
+                  padding: '6px 12px',
+                  borderRadius: 6,
+                  border: '1px solid #f44336',
+                  background: '#f44336',
+                  color: '#fff',
+                  fontSize: 12,
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center'
+                }}
+              >
+                <Trash2 size={14} />
+              </button>
+            </div>
           </div>
         ))}
       </div>

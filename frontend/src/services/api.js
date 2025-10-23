@@ -48,13 +48,14 @@ export const register = (username, email, password) => {
     });
 };
 
-export const sendMessage = (message, personality = null, sessionId = null) => {
+export const sendMessage = (message, personality = 'mitra', sessionId = null, emotion = 'neutral') => {
     return request('/chat/', {
         method: 'POST',
         body: JSON.stringify({ 
             message, 
             personality,
-            session_id: sessionId 
+            session_id: sessionId,
+            user_emotion: emotion
         }),
     });
 };
@@ -76,15 +77,73 @@ export const completeHabit = (habitId) => {
     });
 };
 
+export const updateHabit = (habitId, habitData) => {
+    return request(`/habits/${habitId}`, {
+        method: 'PUT',
+        body: JSON.stringify(habitData),
+    });
+};
+
+export const deleteHabit = (habitId) => {
+    return request(`/habits/${habitId}`, {
+        method: 'DELETE',
+    });
+};
+
 export const getJournals = () => {
     return request('/journals');
 };
 
-export const createJournal = (content, mood) => {
+// Enhanced journal API with emotion support
+export const createJournal = (content, mood, date = null) => {
     return request('/journals', {
         method: 'POST',
-        body: JSON.stringify({ content, mood }),
+        body: JSON.stringify({ 
+            content, 
+            mood, 
+            date: date || new Date().toISOString().split('T')[0]
+        }),
     });
+};
+
+// Get journal entries with filtering
+export const getJournalEntries = (limit = 50, emotion = null) => {
+    const params = new URLSearchParams({ limit: limit.toString() });
+    if (emotion) params.append('emotion', emotion);
+    return request(`/journals?${params.toString()}`);
+};
+
+// Emotion tracking
+export const trackEmotion = (emotion, intensity = 'medium', context = null) => {
+    return request('/emotions/track', {
+        method: 'POST',
+        body: JSON.stringify({
+            emotion,
+            intensity,
+            context,
+            timestamp: new Date().toISOString()
+        }),
+    });
+};
+
+export const getEmotionHistory = (days = 7) => {
+    return request(`/emotions/history?days=${days}`);
+};
+
+// Enhanced habits with emotion correlation
+export const updateHabitProgress = (habitId, completed = true, emotion = null) => {
+    return request(`/habits/${habitId}/progress`, {
+        method: 'POST',
+        body: JSON.stringify({ 
+            completed, 
+            emotion,
+            timestamp: new Date().toISOString()
+        }),
+    });
+};
+
+export const getAvailablePersonalities = () => {
+    return request('/chat/personalities');
 };
 
 // Authentication helpers
@@ -107,10 +166,6 @@ export const switchPersonality = (personality) => {
         method: 'POST',
         body: JSON.stringify({ personality }),
     });
-};
-
-export const getAvailablePersonalities = () => {
-    return request('/chat/personalities');
 };
 
 // Insights

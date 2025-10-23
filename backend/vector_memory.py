@@ -34,6 +34,43 @@ class LongTermMemory:
             ids=[unique_id]
         )
         return unique_id
+    
+    def retrieve_memories(self, query_text, user_id=None, top_k=4):
+        """
+        Retrieve relevant memories based on query text.
+        
+        Args:
+            query_text: The text to search for similar memories
+            user_id: Optional user ID for filtering (not used yet)
+            top_k: Number of results to return
+            
+        Returns:
+            List of decrypted memory strings
+        """
+        results = self.retrieve_memory(query_text=query_text, n_results=top_k)
+        # The pipeline expects a flat list of strings
+        if results and len(results) > 0:
+            return results[0]
+        return []
+        
+    def store_memory(self, user_id, content, memory_type="conversation"):
+        """
+        Store a memory with user ID and type metadata.
+        
+        Args:
+            user_id: The user ID to associate with this memory
+            content: The text content to store
+            memory_type: Type of memory (conversation, journal, etc.)
+            
+        Returns:
+            ID of the stored memory
+        """
+        metadata = {
+            "user_id": str(user_id),
+            "type": memory_type,
+            "timestamp": str(datetime.datetime.now())
+        }
+        return self.add_memory(content, metadata)
 
     def retrieve_memory(self, query_text, n_results=1):
         results = self.collection.query(
