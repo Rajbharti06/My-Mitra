@@ -1,111 +1,155 @@
 import React, { useEffect, useState } from 'react';
-import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, BarChart, Bar } from 'recharts';
+import * as api from '../services/api';
+import { BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
 
 function Insights() {
-  const [data, setData] = useState(null);
+  const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const API_BASE = process.env.REACT_APP_API_BASE || 'http://localhost:8000';
+  const [stats, setStats] = useState(null);
+  const [recentJournals, setRecentJournals] = useState([]);
 
   useEffect(() => {
     const load = async () => {
+      setLoading(true);
       try {
-        const token = localStorage.getItem('token');
-        const res = await fetch(`${API_BASE}/insights`, {
-          headers: { 'Authorization': `Bearer ${token}` }
+        const [insights, journals] = await Promise.all([
+          api.getInsights(),
+          api.getJournals(),
+        ]);
+        setRecentJournals(journals);
+        // Derive stats locally for last 7 days
+        const now = new Date();
+        const start = new Date(); start.setDate(now.getDate() - 6);
+        const inRange = journals.filter(j => {
+          const d = j.created_at ? new Date(j.created_at) : null;
+          return d && d >= start && d <= now;
         });
-        if (!res.ok) throw new Error('Failed to load insights');
-        const d = await res.json();
-        setData(d);
+        const uniqueDays = new Set(inRange.map(j => new Date(j.created_at).toISOString().split('T')[0]));
+        setStats({
+          entries_this_week: inRange.length,
+          active_days: uniqueDays.size,
+        });
       } catch (e) {
-        setError('Could not fetch insights');
+        setError('Could not load insights');
+      } finally {
+        setLoading(false);
       }
     };
     load();
-  }, [API_BASE]);
+  }, []);
+
+  const generateJournalChartData = () => {
+    const now = new Date();
+    const days = [...Array(7)].map((_, i) => {
+      const d = new Date(now);
+      d.setDate(now.getDate() - (6 - i));
+      return { date: d.toISOString().split('T')[0], label: d.toLocaleDateString(undefined, { weekday: 'short' }), entries: 0 };
+    });
+    recentJournals.forEach(j => {
+      if (!j.created_at) return;
+      const dateStr = new Date(j.created_at).toISOString().split('T')[0];
+      const day = days.find(x => x.date === dateStr);
+      if (day) day.entries += 1;
+    });
+    return days.map(d => ({ day: d.label, entries: d.entries }));
+  };
+
+  const getProgressStore = () => {
+    try {
+      const raw = localStorage.getItem('habitProgress');
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  };
+  const generateWeeklyHabitProgress = () => {
+    const store = getProgressStore();
+    const today = new Date();
+    const days = [...Array(7)].map((_, i) => {
+      const d = new Date(today);
+      d.setDate(today.getDate() - (6 - i));
+      return d.toISOString().split('T')[0];
+    });
+    const data = days.map(date => {
+      let total = 0; let count = 0;
+      Object.values(store).forEach(byDate => {
+        if (byDate[date] != null) { total += byDate[date]; count += 1; }
+      });
+      return { day: date.substring(5), percent: count ? Math.round(total / count) : 0 };
+    });
+    return data;
+  };
+
+  const downloadData = () => {
+    const dataStr = JSON.stringify({ stats, recentJournals }, null, 2);
+    const blob = new Blob([dataStr], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = 'insights.json';
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  if (loading) return <p>Loading...</p>;
+  if (error) return <p style={{ color: '#c0392b' }}>{error}</p>;
 
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: 20 }}>
+    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 20 }}>
       <h2 style={{ color: '#204b72' }}>Insights</h2>
-      {error && <p style={{ color: '#c0392b' }}>{error}</p>}
-      {!data ? <p>Loading...</p> : (
+      {stats && (
         <>
-          <div style={{ display: 'flex', gap: 12, marginBottom: 12 }}>
-            <StatCard label="Habits" value={data.summary?.habit_count ?? 0} />
-            <StatCard label="Journals" value={data.summary?.journal_count ?? 0} />
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+            <StatCard title="Journal Entries This Week" value={stats.entries_this_week} />
+            <StatCard title="Active Days" value={stats.active_days} />
           </div>
-          <div style={{ background: '#fff', border: '1px solid #e6e9ef', borderRadius: 12, padding: 12, marginBottom: 12 }}>
-            <h3 style={{ marginTop: 0 }}>Journal Activity (Last 7 Days)</h3>
-            <ResponsiveContainer width="100%" height={200}>
-              <BarChart data={generateJournalChartData(data.journals || [])}>
-                <CartesianGrid strokeDasharray="3 3" />
-                <XAxis dataKey="day" />
-                <YAxis />
-                <Tooltip />
-                <Bar dataKey="count" fill="#3a6ea5" />
-              </BarChart>
-            </ResponsiveContainer>
+
+          <div style={{ marginTop: 24 }}>
+            <h3 style={{ color: '#204b72' }}>Weekly Journal Activity</h3>
+            <BarChart width={600} height={300} data={generateJournalChartData()}>
+              <XAxis dataKey="day" />
+              <YAxis />
+              <Tooltip />
+              <Bar dataKey="entries" fill="#3a6ea5" />
+            </BarChart>
           </div>
-          <div style={{ background: '#fff', border: '1px solid #e6e9ef', borderRadius: 12, padding: 12, marginBottom: 12 }}>
-            <h3 style={{ marginTop: 0 }}>Recent Journals</h3>
-            {(data.journals || []).slice(0, 5).map(j => (
-              <div key={j.id} style={{ borderTop: '1px solid #eef2f7', padding: '8px 0' }}>
-                <div style={{ fontSize: 12, color: '#7a8a9e' }}>#{j.id} • {j.created_at ? new Date(j.created_at).toLocaleDateString() : 'No date'}</div>
-                <div>{j.content}</div>
-              </div>
-            ))}
+
+          <div style={{ marginTop: 24 }}>
+            <h3 style={{ color: '#204b72' }}>Weekly Habit Progress</h3>
+            <BarChart width={600} height={300} data={generateWeeklyHabitProgress()}>
+              <XAxis dataKey="day" />
+              <YAxis domain={[0,100]} tickFormatter={(v) => `${v}%`} />
+              <Tooltip formatter={(v) => `${v}%`} />
+              <Bar dataKey="percent" fill="#4caf50" />
+            </BarChart>
+            <div style={{ fontSize: 12, color: '#7a8a9e' }}>Averages the logged percent across all habits per day.</div>
           </div>
-          <button onClick={async () => {
-            try {
-              const token = localStorage.getItem('token');
-              const res = await fetch(`${API_BASE}/me/export`, { headers: { 'Authorization': `Bearer ${token}` } });
-              const blob = new Blob([JSON.stringify(await res.json(), null, 2)], { type: 'application/json' });
-              const url = window.URL.createObjectURL(blob);
-              const a = document.createElement('a');
-              a.href = url; a.download = 'mymitra_export.json'; a.click();
-              window.URL.revokeObjectURL(url);
-            } catch (e) {
-              setError('Failed to export data');
-            }
-          }} style={{ padding: '10px 14px', borderRadius: 10, border: '1px solid #3a6ea5', background: '#3a6ea5', color: '#fff', fontWeight: 700 }}>
-            Download your data
-          </button>
+
+          <div style={{ marginTop: 24 }}>
+            <h3 style={{ color: '#204b72' }}>Recent Journals</h3>
+            <ul>
+              {recentJournals.map(j => (
+                <li key={j.id} style={{ marginBottom: 8 }}>
+                  <strong>{j.title || 'Untitled'}</strong> — {j.created_at ? new Date(j.created_at).toLocaleString() : 'Unknown time'}
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div style={{ marginTop: 24 }}>
+            <button onClick={downloadData} style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #204b72', background: '#204b72', color: '#fff' }}>
+              Export Insights
+            </button>
+          </div>
         </>
       )}
     </div>
   );
 }
 
-function generateJournalChartData(journals) {
-  const last7Days = [];
-  for (let i = 6; i >= 0; i--) {
-    const date = new Date();
-    date.setDate(date.getDate() - i);
-    const dayName = date.toLocaleDateString('en-US', { weekday: 'short' });
-    last7Days.push({ day: dayName, count: 0 });
-  }
-  
-  journals.forEach(journal => {
-    if (journal.created_at) {
-      const journalDate = new Date(journal.created_at);
-      const today = new Date();
-      const diffTime = Math.abs(today - journalDate);
-      const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-      
-      if (diffDays <= 6) {
-        const dayIndex = 6 - diffDays;
-        last7Days[dayIndex].count++;
-      }
-    }
-  });
-  
-  return last7Days;
-}
-
-function StatCard({ label, value }) {
+function StatCard({ title, value }) {
   return (
-    <div style={{ flex: 1, background: '#fff', border: '1px solid #e6e9ef', borderRadius: 12, padding: 16 }}>
-      <div style={{ color: '#7a8a9e', fontSize: 12 }}>{label}</div>
-      <div style={{ color: '#204b72', fontSize: 24, fontWeight: 800 }}>{value}</div>
+    <div style={{ background: '#fff', border: '1px solid #e6e9ef', borderRadius: 12, padding: 12 }}>
+      <div style={{ fontSize: 12, color: '#7a8a9e' }}>{title}</div>
+      <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
     </div>
   );
 }

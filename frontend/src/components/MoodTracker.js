@@ -78,60 +78,37 @@ function MoodTracker({ onSubmit }) {
     setStep(1);
   };
 
-  const handleAnswer = (questionId, value) => {
-    setAnswers({
-      ...answers,
-      [questionId]: value
-    });
-    
-    if (step < questions.length) {
-      setStep(step + 1);
-    } else {
-      analyzeMood();
-    }
-  };
+  const analyzeMood = (finalAnswers) => {
+    const usedAnswers = finalAnswers || answers;
+    const { avgScore, feedback, suggestions } = getMoodAnalysis(usedAnswers);
 
-  const analyzeMood = () => {
-    // Calculate average score
-    const totalScore = Object.values(answers).reduce((sum, val) => sum + val, 0);
-    const avgScore = totalScore / Object.keys(answers).length;
-    
-    // Generate feedback based on scores
-    let feedback = '';
-    let suggestions = [];
-    
-    if (avgScore >= 4.5) {
-      feedback = "You're having an excellent day! Your responses indicate high levels of well-being.";
-      suggestions = ["Celebrate your positive state", "Share your positivity with others", "Document what's working well"];
-    } else if (avgScore >= 3.5) {
-      feedback = "You're having a good day overall. There are some areas where you're doing well.";
-      suggestions = ["Build on your strengths today", "Take time to appreciate the positives", "Consider what's contributing to your good mood"];
-    } else if (avgScore >= 2.5) {
-      feedback = "You're having an average day with mixed experiences.";
-      suggestions = ["Focus on small wins", "Practice mindfulness", "Consider a short break or change of scenery"];
-    } else if (avgScore >= 1.5) {
-      feedback = "You seem to be facing some challenges today. Be gentle with yourself.";
-      suggestions = ["Prioritize self-care", "Reach out to someone supportive", "Break tasks into smaller steps"];
-    } else {
-      feedback = "Today appears to be quite difficult. Remember that difficult days are temporary.";
-      suggestions = ["Focus on basic needs first", "Consider professional support if needed", "Practice self-compassion"];
-    }
-    
-    // Save results
     const results = {
       mood,
-      answers,
+      answers: usedAnswers,
       avgScore,
       feedback,
       suggestions,
       timestamp: new Date().toISOString()
     };
-    
+
     if (onSubmit) {
       onSubmit(results);
     }
-    
+
+    // ensure latest answers are in state before showing results
+    setAnswers(usedAnswers);
     setShowResults(true);
+  };
+
+  const handleAnswer = (questionId, value) => {
+    const nextAnswers = { ...answers, [questionId]: value };
+    setAnswers(nextAnswers);
+
+    if (step < questions.length) {
+      setStep(step + 1);
+    } else {
+      analyzeMood(nextAnswers);
+    }
   };
 
   const resetTracker = () => {
@@ -142,19 +119,19 @@ function MoodTracker({ onSubmit }) {
   };
 
   if (showResults) {
-    const avgScore = Object.values(answers).reduce((sum, val) => sum + val, 0) / Object.keys(answers).length;
+    const { avgScore, feedback, suggestions } = getMoodAnalysis(answers);
     let moodResult;
-    
+
     if (avgScore >= 4.5) moodResult = 'very_happy';
     else if (avgScore >= 3.5) moodResult = 'happy';
     else if (avgScore >= 2.5) moodResult = 'neutral';
     else if (avgScore >= 1.5) moodResult = 'sad';
     else moodResult = 'very_sad';
-    
+
     return (
       <div style={containerStyle}>
         <h2 style={{ color: '#204b72', marginBottom: 20 }}>Your Mood Analysis</h2>
-        
+
         <div style={{ display: 'flex', alignItems: 'center', marginBottom: 20 }}>
           <div style={{ 
             fontSize: 48, 
@@ -174,7 +151,7 @@ function MoodTracker({ onSubmit }) {
             <p style={{ margin: '8px 0 0 0' }}>Score: {avgScore.toFixed(1)} / 5</p>
           </div>
         </div>
-        
+
         <div style={{ 
           padding: 16, 
           backgroundColor: '#f5f7fa', 
@@ -182,31 +159,18 @@ function MoodTracker({ onSubmit }) {
           marginBottom: 20 
         }}>
           <h3 style={{ marginTop: 0 }}>Feedback</h3>
-          <p>{Object.values(answers).reduce((sum, val) => sum + val, 0) / Object.keys(answers).length >= 3 ? 
-            "You're doing well! Keep up the good work." : 
-            "Today might be challenging. Remember to take care of yourself."}</p>
+          <p>{feedback}</p>
         </div>
-        
+
         <div style={{ marginBottom: 20 }}>
           <h3>Suggestions to improve your day:</h3>
           <ul style={{ paddingLeft: 20 }}>
-            {avgScore >= 3 ? (
-              <>
-                <li>Celebrate your wins today</li>
-                <li>Share your positive energy with others</li>
-                <li>Document what's working well for future reference</li>
-              </>
-            ) : (
-              <>
-                <li>Take some time for self-care activities</li>
-                <li>Consider talking to someone you trust</li>
-                <li>Break your tasks into smaller, manageable steps</li>
-                <li>Remember that difficult days are temporary</li>
-              </>
-            )}
+            {suggestions.map((s, idx) => (
+              <li key={idx}>{s}</li>
+            ))}
           </ul>
         </div>
-        
+
         <button 
           onClick={resetTracker}
           style={{
@@ -352,7 +316,7 @@ function MoodTracker({ onSubmit }) {
       
       {step === questions.length && (
         <button
-          onClick={analyzeMood}
+          onClick={() => analyzeMood()}
           style={{
             marginTop: 20,
             padding: '10px 16px',
@@ -383,3 +347,37 @@ const containerStyle = {
 };
 
 export default MoodTracker;
+
+// Add dynamic feedback generator based on answers
+const getMoodAnalysis = (answers) => {
+  const keys = ['sleepQuality','stressLevel','energyLevel','socialInteraction','productivity'];
+  const vals = keys.map(k => answers[k]).filter(v => typeof v === 'number');
+  const avg = vals.length ? vals.reduce((a,b)=>a+b,0)/vals.length : 0;
+  const avgScore = Number(avg.toFixed(1));
+  // Find lowest dimension for targeted tip
+  let lowestKey = null; let lowestVal = Infinity;
+  keys.forEach(k => { const v = answers[k]; if (typeof v === 'number' && v < lowestVal) { lowestVal = v; lowestKey = k; } });
+  const labelMap = {
+    sleepQuality: 'sleep', stressLevel: 'stress', energyLevel: 'energy', socialInteraction: 'social', productivity: 'productivity'
+  };
+  let feedback = '';
+  let suggestions = [];
+  if (avgScore >= 4.5) {
+    feedback = "You're on a great streak today — keep it up!";
+    suggestions = ["Maintain routines that work for you","Consider sharing your wins in Journal"];
+  } else if (avgScore >= 3.5) {
+    feedback = "Overall good day with a few areas to polish.";
+    suggestions = ["Pick one small improvement for tomorrow","Plan a 10-minute reset if needed"];
+  } else if (avgScore >= 2.5) {
+    feedback = "Mixed signals — take a moment to rebalance.";
+    suggestions = ["Try a short walk or breathing exercise","Write a quick reflection in Journal"];
+  } else {
+    feedback = "Tough day — be kind to yourself and rest.";
+    suggestions = ["Reach out to someone you trust","Prioritize sleep and hydration"];
+  }
+  if (lowestKey) {
+    const area = labelMap[lowestKey];
+    suggestions.unshift(`Focus gently on ${area} — it's lowest today`);
+  }
+  return { avgScore, feedback, suggestions };
+};

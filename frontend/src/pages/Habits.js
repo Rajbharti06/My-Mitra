@@ -11,6 +11,28 @@ function Habits() {
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [habitToEdit, setHabitToEdit] = useState(null);
 
+  // Local progress storage: { [habitId]: { [YYYY-MM-DD]: percent } }
+  const getProgressStore = () => {
+    try {
+      const raw = localStorage.getItem('habitProgress');
+      return raw ? JSON.parse(raw) : {};
+    } catch { return {}; }
+  };
+  const saveProgressStore = (store) => {
+    localStorage.setItem('habitProgress', JSON.stringify(store));
+  };
+  const getToday = () => new Date().toISOString().split('T')[0];
+  const getTodayPercent = (habitId) => {
+    const store = getProgressStore();
+    return store[habitId]?.[getToday()] ?? null;
+  };
+  const setTodayPercent = (habitId, percent) => {
+    const store = getProgressStore();
+    if (!store[habitId]) store[habitId] = {};
+    store[habitId][getToday()] = percent;
+    saveProgressStore(store);
+  };
+
   useEffect(() => {
     const handleOnline = () => setIsOnline(true);
     const handleOffline = () => setIsOnline(false);
@@ -132,14 +154,26 @@ function Habits() {
               <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>{it.description}</div>
             )}
             <div style={{ fontSize: 12, color: '#7a8a9e' }}>{it.frequency}</div>
+            <div style={{ fontSize: 12, color: '#204b72', marginTop: 6 }}>
+              Today: {getTodayPercent(it.id) != null ? `${getTodayPercent(it.id)}%` : 'Not logged'}
+            </div>
             <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
               <button 
                 onClick={async () => {
                   try {
-                    await api.completeHabit(it.id);
-                    fetchList();
+                    const input = window.prompt('What percent did you complete today? (0-100)', getTodayPercent(it.id) ?? '');
+                    if (input === null) return;
+                    const pct = Math.max(0, Math.min(100, Number(input)));
+                    if (Number.isNaN(pct)) { setError('Please enter a valid number'); return; }
+                    setTodayPercent(it.id, pct);
+                    // Optionally mark complete if pct >= 100
+                    if (pct >= 100 && isOnline) {
+                      try { await api.completeHabit(it.id); } catch {}
+                    }
+                    // Re-render
+                    setItems(prev => [...prev]);
                   } catch (e) {
-                    setError('Failed to complete habit');
+                    setError('Failed to log progress');
                   }
                 }}
                 style={{ 
@@ -152,7 +186,7 @@ function Habits() {
                   fontSize: 12 
                 }}
               >
-                Complete Today
+                Log Today's %
               </button>
               <button
                 onClick={() => setHabitToEdit(it)}

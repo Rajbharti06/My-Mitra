@@ -7,7 +7,9 @@ import HabitTracker from './HabitTracker';
 
 const Dashboard = ({ onNavigate }) => {
   const [currentTime, setCurrentTime] = useState(new Date());
-  const [userName] = useState('Raj'); // This would come from user context
+  // Use saved name if available; otherwise empty to show inline prompt
+  const [userName, setUserName] = useState(() => localStorage.getItem('username') || '');
+  const [nameInput, setNameInput] = useState('');
   const [currentMood] = useState('happy'); // This would come from mood tracking
   const [moodIntensity] = useState(0.8);
 
@@ -15,6 +17,24 @@ const Dashboard = ({ onNavigate }) => {
     const timer = setInterval(() => setCurrentTime(new Date()), 1000);
     return () => clearInterval(timer);
   }, []);
+
+  // First-run: show inline name input on dashboard only
+  useEffect(() => {
+    const existing = localStorage.getItem('username');
+    if (existing) {
+      setUserName(existing);
+    } else {
+      setUserName('');
+    }
+  }, []);
+
+  const saveName = () => {
+    const cleaned = nameInput.trim();
+    if (cleaned.length > 0) {
+      localStorage.setItem('username', cleaned);
+      setUserName(cleaned);
+    }
+  };
 
   const getGreeting = () => {
     const hour = currentTime.getHours();
@@ -70,7 +90,7 @@ const Dashboard = ({ onNavigate }) => {
             animate={{ scale: 1 }}
             transition={{ duration: 0.5, type: "spring" }}
           >
-            {getGreeting()}, {userName} {getGreetingEmoji()}
+            {getGreeting()}, {userName || 'Friend'} {getGreetingEmoji()}
           </motion.h1>
           
           <motion.p
@@ -86,6 +106,32 @@ const Dashboard = ({ onNavigate }) => {
               day: 'numeric' 
             })}
           </motion.p>
+
+          {/* Inline name prompt (first-run only) */}
+          {!userName && (
+            <motion.div
+              className="mx-auto mt-4 max-w-md bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-2xl p-4 shadow-soft"
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
+              <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">Welcome! What should Mitra call you?</p>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  placeholder="Enter your name"
+                  className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-800 dark:text-gray-200"
+                />
+                <button
+                  onClick={saveName}
+                  className="bg-warm-brown text-white rounded-xl px-4 py-2 text-sm font-semibold hover:opacity-90"
+                >
+                  Save
+                </button>
+              </div>
+            </motion.div>
+          )}
         </motion.div>
 
         {/* Emotion Ring Section */}

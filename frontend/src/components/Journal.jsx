@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, Save, BookOpen, Heart, Smile, Frown, Meh, Angry, Plus } from 'lucide-react';
+import { Calendar, Save, BookOpen, Heart, Smile, Frown, Meh, Angry, Plus, MoreVertical, Edit, Trash2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 import { getEmotionColor, getEmotionEmoji } from '../utils/theme';
 
@@ -10,6 +10,7 @@ const Journal = () => {
   const [selectedEmotion, setSelectedEmotion] = useState('neutral');
   const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
   const [isWriting, setIsWriting] = useState(false);
+  const [editingId, setEditingId] = useState(null);
 
   useEffect(() => {
     // Load journal entries from localStorage
@@ -25,8 +26,7 @@ const Journal = () => {
       return;
     }
 
-    const newEntry = {
-      id: Date.now(),
+    const baseEntry = {
       date: selectedDate,
       content: currentEntry.trim(),
       emotion: selectedEmotion,
@@ -34,15 +34,38 @@ const Journal = () => {
       wordCount: currentEntry.trim().split(/\s+/).length
     };
 
-    const updatedEntries = [newEntry, ...entries];
+    let updatedEntries;
+    if (editingId) {
+      updatedEntries = entries.map(e => e.id === editingId ? { ...e, ...baseEntry } : e);
+      toast.success('Journal entry updated ✏️');
+    } else {
+      const newEntry = { id: Date.now(), ...baseEntry };
+      updatedEntries = [newEntry, ...entries];
+      toast.success('Journal entry saved! 📝');
+    }
+
     setEntries(updatedEntries);
     localStorage.setItem('journalEntries', JSON.stringify(updatedEntries));
     
     setCurrentEntry('');
     setSelectedEmotion('neutral');
     setIsWriting(false);
-    
-    toast.success('Journal entry saved! 📝');
+    setEditingId(null);
+  };
+
+  const startEdit = (entry) => {
+    setIsWriting(true);
+    setCurrentEntry(entry.content);
+    setSelectedEmotion(entry.emotion);
+    setSelectedDate(entry.date);
+    setEditingId(entry.id);
+  };
+
+  const deleteEntry = (id) => {
+    const updated = entries.filter(e => e.id !== id);
+    setEntries(updated);
+    localStorage.setItem('journalEntries', JSON.stringify(updated));
+    toast.success('Entry deleted 🗑️');
   };
 
   const EmotionSelector = () => {
@@ -77,9 +100,10 @@ const Journal = () => {
     );
   };
 
-  const JournalEntry = ({ entry }) => {
+  const JournalEntry = ({ entry, onEdit, onDelete }) => {
     const emotionColor = getEmotionColor(entry.emotion);
     const emotionEmoji = getEmotionEmoji(entry.emotion);
+    const [menuOpen, setMenuOpen] = useState(false);
 
     return (
       <motion.div
@@ -100,8 +124,35 @@ const Journal = () => {
               })}
             </span>
           </div>
-          <div className="text-xs text-gray-400 dark:text-gray-500">
-            {entry.wordCount} words
+          <div className="flex items-center gap-2">
+            <div className="text-xs text-gray-400 dark:text-gray-500 mr-1">
+              {entry.wordCount} words
+            </div>
+            <div className="relative">
+              <button
+                onClick={() => setMenuOpen(v => !v)}
+                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400"
+                title="Options"
+              >
+                <MoreVertical size={16} />
+              </button>
+              {menuOpen && (
+                <div className="absolute right-0 mt-2 w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-soft z-10">
+                  <button
+                    onClick={() => { setMenuOpen(false); onEdit(entry); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
+                  >
+                    <Edit size={14} /> Edit
+                  </button>
+                  <button
+                    onClick={() => { setMenuOpen(false); onDelete(entry.id); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 dark:text-red-300"
+                  >
+                    <Trash2 size={14} /> Delete
+                  </button>
+                </div>
+              )}
+            </div>
           </div>
         </div>
         <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
@@ -244,7 +295,7 @@ const Journal = () => {
                 Your Reflections ({entries.length} entries)
               </h2>
               {entries.map((entry) => (
-                <JournalEntry key={entry.id} entry={entry} />
+                <JournalEntry key={entry.id} entry={entry} onEdit={startEdit} onDelete={deleteEntry} />
               ))}
             </div>
           )}
