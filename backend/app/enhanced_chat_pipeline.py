@@ -159,7 +159,7 @@ class EnhancedChatPipeline:
         """
         try:
             # Validate personality
-            if personality not in ["default", "mentor", "motivator", "coach"]:
+            if personality not in ["default", "mentor", "motivator", "coach", "mitra"]:
                 return {
                     "success": False,
                     "error": "Invalid personality type",
@@ -200,7 +200,7 @@ class EnhancedChatPipeline:
         """Determine which personality to use based on request and user preference."""
         
         # Use requested personality if provided
-        if requested_personality and requested_personality in ["default", "mentor", "motivator", "coach"]:
+        if requested_personality and requested_personality in ["default", "mentor", "motivator", "coach", "mitra"]:
             return requested_personality
         
         # Use user's saved preference if available
@@ -218,7 +218,8 @@ class EnhancedChatPipeline:
             "default": PersonalityType.DEFAULT,
             "mentor": PersonalityType.MENTOR,
             "motivator": PersonalityType.MOTIVATOR,
-            "coach": PersonalityType.COACH
+            "coach": PersonalityType.COACH,
+            "mitra": PersonalityType.MITRA
         }
         return mapping.get(personality_str, PersonalityType.DEFAULT)
     
