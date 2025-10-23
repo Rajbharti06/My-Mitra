@@ -9,9 +9,9 @@ from datetime import datetime, timedelta
 import json
 
 from ..database import get_db
-from ..models.emotion import EmotionRecord, EmotionInsight
+from ..models import EmotionRecord, EmotionInsight
 from ..schemas import EmotionResponse, EmotionAnalysisRequest, EmotionInsightResponse
-from ...core.emotion_engine import emotion_engine, EmotionCategory, EmotionIntensity
+from core.emotion_engine import emotion_engine, EmotionCategory, EmotionIntensity
 
 router = APIRouter(
     prefix="/emotions",

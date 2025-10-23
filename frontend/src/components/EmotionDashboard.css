@@ -1,0 +1,148 @@
+.emotion-dashboard {
+  background-color: var(--bg-primary);
+  border-radius: 8px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  padding: 20px;
+  margin: 20px 0;
+  max-width: 800px;
+}
+
+.dashboard-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.dashboard-header h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 1.5rem;
+}
+
+.time-range-selector {
+  display: flex;
+  gap: 8px;
+}
+
+.time-range-selector button {
+  background-color: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  color: var(--text-secondary);
+  padding: 6px 12px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.time-range-selector button.active {
+  background-color: var(--primary-color);
+  color: white;
+  border-color: var(--primary-color);
+}
+
+.time-range-selector button:hover:not(.active) {
+  background-color: var(--hover-color);
+}
+
+.loading {
+  text-align: center;
+  padding: 20px;
+  color: var(--text-secondary);
+}
+
+.dashboard-content {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 20px;
+}
+
+@media (min-width: 768px) {
+  .dashboard-content {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.insight-card {
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.insight-card h3 {
+  margin-top: 0;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  margin-bottom: 10px;
+}
+
+.insight-card p {
+  color: var(--text-secondary);
+  line-height: 1.5;
+  margin-bottom: 15px;
+}
+
+.dominant-emotion {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.dominant-emotion span {
+  color: var(--text-secondary);
+}
+
+.emotion-trends {
+  background-color: var(--bg-secondary);
+  border-radius: 8px;
+  padding: 15px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.emotion-trends h3 {
+  margin-top: 0;
+  color: var(--text-primary);
+  font-size: 1.2rem;
+  margin-bottom: 15px;
+}
+
+.emotion-distribution {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.emotion-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.emotion-label {
+  width: 80px;
+  display: flex;
+  align-items: center;
+}
+
+.bar-container {
+  flex-grow: 1;
+  height: 12px;
+  background-color: var(--bg-primary);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.bar-fill {
+  height: 100%;
+  border-radius: 6px;
+  transition: width 0.3s ease;
+}
+
+.bar-value {
+  width: 30px;
+  text-align: right;
+  color: var(--text-secondary);
+  font-size: 0.9rem;
+}

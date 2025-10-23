@@ -1,0 +1,78 @@
+/* Cozy autumn dashboard */
+.dashboard {
+  max-width: 1000px;
+  margin: 0 auto;
+  padding: 24px 16px;
+  color: var(--mm-text);
+}
+
+.greeting {
+  margin-bottom: 12px;
+  font-size: 1.8rem;
+  font-weight: 700;
+  opacity: 0;
+  animation: fadeIn 0.8s ease forwards;
+}
+
+.subtext {
+  margin-top: 0;
+  color: var(--mm-muted);
+  margin-bottom: 20px;
+  opacity: 0;
+  animation: fadeIn 1.2s ease forwards;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 16px;
+}
+
+@media (min-width: 768px) {
+  .cards {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+.card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--mm-border);
+  border-radius: 24px;
+  box-shadow: var(--mm-shadow);
+  padding: 16px;
+}
+
+.card h3 {
+  margin-top: 0;
+  color: var(--mm-primary);
+}
+
+.mood-ring-card {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.quote-card {
+  background: var(--mm-user-bubble);
+}
+
+.cta {
+  display: flex;
+  justify-content: center;
+  margin-top: 10px;
+}
+
+.cta a {
+  text-decoration: none;
+  background: var(--mm-primary);
+  color: #fff;
+  padding: 12px 18px;
+  border-radius: 24px;
+  font-weight: 600;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: translateY(0); }
+}

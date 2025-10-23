@@ -170,68 +170,73 @@ function Chat() {
         )}
       </div>
       <div className="chat-window" ref={chatWindowRef}>
-        {messages.map((msg, index) => (
-          <div key={index} className={`message ${msg.sender}`}>
-            <div className="message-content">
-              <div className="message-icon">
-                {msg.sender === 'user' ? (
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <circle cx="12" cy="12" r="11" stroke="#7a8a9e" strokeWidth="2"/>
-                    <circle cx="12" cy="10" r="4" stroke="#7a8a9e" strokeWidth="2"/>
-                    <path d="M4 19C4 16 8 13 12 13C16 13 20 16 20 19" stroke="#7a8a9e" strokeWidth="2"/>
-                  </svg>
-                ) : msg.sender === 'ai' ? (
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#7a8a9e" strokeWidth="2"/>
-                    <path d="M2 17L12 22L22 17" stroke="#7a8a9e" strokeWidth="2"/>
-                    <path d="M2 12L12 17L22 12" stroke="#7a8a9e" strokeWidth="2"/>
-                  </svg>
-                ) : (
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
-                    <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2Z" stroke="#7a8a9e" strokeWidth="2"/>
-                    <path d="M12 6V12L16 14" stroke="#7a8a9e" strokeWidth="2"/>
-                  </svg>
-                )}
-              </div>
-              <div className="message-bubble">
-                {msg.card_type ? (
-                  <ConversationalCard type={msg.card_type} data={msg.card_data} />
-                ) : (
-                  msg.text
-                )}
-              </div>
-            </div>
-          </div>
-        ))}
-        {isTyping && (
-          <div className="message ai">
-            <div className="message-content">
-              <div className="message-icon" />
-              <div className="message-bubble typing-indicator">
-                <span></span><span></span><span></span>
+        <div className="chat-thread">
+          {messages.map((msg, index) => (
+            <div key={index} className={`message ${msg.sender}`}>
+              <div className="message-content">
+                <div className="message-icon">
+                  {msg.sender === 'user' ? (
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                      <circle cx="12" cy="12" r="11" stroke="#7a8a9e" strokeWidth="2"/>
+                      <circle cx="12" cy="10" r="4" stroke="#7a8a9e" strokeWidth="2"/>
+                      <path d="M4 19C4 16 8 13 12 13C16 13 20 16 20 19" stroke="#7a8a9e" strokeWidth="2"/>
+                    </svg>
+                  ) : msg.sender === 'ai' ? (
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                      <path d="M12 2L2 7L12 12L22 7L12 2Z" stroke="#7a8a9e" strokeWidth="2"/>
+                      <path d="M2 17L12 22L22 17" stroke="#7a8a9e" strokeWidth="2"/>
+                      <path d="M2 12L12 17L22 12" stroke="#7a8a9e" strokeWidth="2"/>
+                    </svg>
+                  ) : (
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                      <path d="M12 2C6.48 2 2 6.48 2 12C2 17.52 6.48 22 12 22C17.52 22 22 17.52 22 12C22 6.48 17.52 2 12 2Z" stroke="#7a8a9e" strokeWidth="2"/>
+                      <path d="M12 6V12L16 14" stroke="#7a8a9e" strokeWidth="2"/>
+                    </svg>
+                  )}
+                </div>
+                <div className="message-bubble">
+                  {msg.card_type ? (
+                    <ConversationalCard type={msg.card_type} data={msg.card_data} />
+                  ) : (
+                    msg.text
+                  )}
+                </div>
               </div>
             </div>
-          </div>
-        )}
+          ))}
+          {isTyping && (
+            <div className="message ai">
+              <div className="message-content">
+                <div className="message-icon" />
+                <div className="message-bubble typing-indicator">
+                  <span></span><span></span><span></span>
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
       {error && <div className="error-message">{error}</div>}
       <div className="input-area">
-        <div className="quick-prompts">
-          {['Feeling stressed', 'Give me a journal prompt', 'Suggest a small habit'].map(p => (
-            <button key={p} className="prompt-chip" onClick={() => setInput(p)}>{p}</button>
-          ))}
-        </div>
-        <div className="input-container">
-          <input
-            type="text"
-            placeholder="Type your message…"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            disabled={isLoading}
-          />
-          <button onClick={handleSend} disabled={isLoading} aria-label="Send message">
-            {isLoading ? <div className="button-spinner" /> : 'Send'}
-          </button>
+        <div className="chat-thread">
+          <div className="quick-prompts">
+            {['Feeling stressed', 'Give me a journal prompt', 'Suggest a small habit'].map(p => (
+              <button key={p} className="prompt-chip" onClick={() => setInput(p)}>{p}</button>
+            ))}
+          </div>
+          <div className="input-container">
+            <input
+              type="text"
+              placeholder="Type your message…"
+              value={input}
+              onChange={(e) => setInput(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); handleSend(); } }}
+              disabled={isLoading}
+            />
+            <button onClick={handleSend} disabled={isLoading} aria-label="Send message">
+              {isLoading ? <div className="button-spinner" /> : 'Send'}
+            </button>
+          </div>
         </div>
       </div>
     </div>

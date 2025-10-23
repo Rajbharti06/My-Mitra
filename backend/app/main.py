@@ -31,6 +31,23 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
+# Ensure DB schema is up to date (add missing columns)
+def ensure_db_schema():
+    try:
+        from .database import engine
+        with engine.begin() as conn:
+            cols = [row[1] for row in conn.exec_driver_sql("PRAGMA table_info(users)").fetchall()]
+            if "preferred_personality" not in cols:
+                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN preferred_personality TEXT DEFAULT 'default'")
+            if "role" not in cols:
+                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'user'")
+            if "is_active" not in cols:
+                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
+            if "created_at" not in cols:
+                conn.exec_driver_sql("ALTER TABLE users ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+    except Exception as e:
+        logger.warning(f"Schema check failed: {e}")
+
 # Create database tables
 models.Base.metadata.create_all(bind=engine)
 
@@ -48,7 +65,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.ALLOWED_ORIGINS,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
@@ -66,6 +83,8 @@ async def global_exception_handler(request, exc):
 async def startup_event():
     """Initialize services on startup."""
     logger.info("Starting My Mitra backend...")
+    # Ensure DB schema before using models
+    ensure_db_schema()
     
     # Validate configuration
     if not settings.validate_config() and not settings.DEBUG:

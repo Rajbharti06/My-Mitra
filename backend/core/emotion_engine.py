@@ -27,6 +27,18 @@ except ImportError:
     TRANSFORMERS_AVAILABLE = False
     logging.warning("Transformers not available. Using rule-based fallback for emotion detection.")
 
+# Allow disabling heavy ML dependencies via environment variables for faster dev startup
+DISABLE_TRANSFORMERS = os.getenv("DISABLE_TRANSFORMERS", "false").lower() == "true"
+DISABLE_TEXTBLOB = os.getenv("DISABLE_TEXTBLOB", "false").lower() == "true"
+
+if DISABLE_TRANSFORMERS and TRANSFORMERS_AVAILABLE:
+    TRANSFORMERS_AVAILABLE = False
+    logging.warning("Transformers disabled by environment variable; using rule-based/TextBlob only.")
+
+if DISABLE_TEXTBLOB and TEXTBLOB_AVAILABLE:
+    TEXTBLOB_AVAILABLE = False
+    logging.warning("TextBlob disabled by environment variable; using rule-based only.")
+
 class EmotionCategory(str, Enum):
     """Emotion categories detected by the engine"""
     HAPPY = "happy"
@@ -86,7 +98,7 @@ class EmotionEngine:
                 self._try_load_default_model()
         elif TRANSFORMERS_AVAILABLE:
             self._try_load_default_model()
-    
+
     def _try_load_default_model(self):
         """Try to load a small default emotion model"""
         try:
@@ -100,7 +112,7 @@ class EmotionEngine:
         except Exception as e:
             self.logger.error(f"Failed to load default emotion model: {e}")
             self.transformer_available = False
-    
+
     def _load_emotion_patterns(self):
         """Load emotion keywords and patterns from internal dictionary"""
         # Dictionary mapping emotions to their keywords and phrases

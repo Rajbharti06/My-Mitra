@@ -13,7 +13,7 @@ import logging
 
 from . import models, schemas, crud, security
 from .database import get_db
-from ..encryption_utils import decrypt_data
+from encryption_utils import decrypt_data
 
 logger = logging.getLogger(__name__)
 

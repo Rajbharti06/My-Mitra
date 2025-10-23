@@ -4,7 +4,7 @@ import './App.css';
 import Chat from './Chat';
 import Navbar from './components/Navbar';
 import Footer from './components/Footer';
-// import Home from './pages/Home';
+import Dashboard from './pages/Dashboard';
 import Journals from './pages/Journals';
 import Habits from './pages/Habits';
 import NotFound from './pages/NotFound';
@@ -13,7 +13,7 @@ import Insights from './pages/Insights';
 function App() {
   const [darkMode, setDarkMode] = useState(() => {
     const saved = localStorage.getItem('darkMode');
-    return saved ? JSON.parse(saved) : false;
+    return saved ? JSON.parse(saved) : true;
   });
 
   useEffect(() => {
@@ -31,11 +31,11 @@ function App() {
         <Navbar darkMode={darkMode} setDarkMode={setDarkMode} />
         <main style={{ flexGrow: 1 }}>
           <Routes>
+            <Route path="/" element={<Dashboard />} />
             <Route path="/chat" element={<Chat />} />
             <Route path="/journals" element={<Journals />} />
             <Route path="/habits" element={<Habits />} />
             <Route path="/insights" element={<Insights />} />
-            <Route path="/" element={<Navigate to="/chat" replace />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </main>

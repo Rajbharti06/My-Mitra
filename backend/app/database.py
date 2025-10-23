@@ -11,6 +11,17 @@ SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 
 Base = declarative_base()
 
+# FastAPI dependency to provide a DB session per request
+# Ensures sessions are properly closed after use
+from typing import Generator
+
+def get_db() -> Generator:
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
 
 def get_last_messages(user_id: str, limit: int = 8):
     """

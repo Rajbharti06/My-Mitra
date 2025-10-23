@@ -4,6 +4,7 @@ from typing import Optional, Any, List
 from pydantic import BaseModel
 import os
 import uuid
+import logging
 
 from . import crud, models, schemas, security
 from .database import SessionLocal
@@ -12,6 +13,9 @@ import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import encryption_utils
 from .enhanced_chat_pipeline import enhanced_chat_pipeline
+
+# Set up logging
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -25,28 +29,38 @@ def get_db():
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 async def get_current_user_optional(db: Any = Depends(get_db)):
-    # Return a default user for open access
-    default_user = crud.get_user(db, "default_user")
-    if not default_user:
-        # Create a default user if it doesn't exist
-        default_user = crud.create_user(db, schemas.UserCreate(
-            username="default_user",
-            email="default@example.com",
-            password="default"
-        ))
-    return default_user
+    try:
+        # Return a default user for open access
+        default_user = crud.get_user(db, "default_user")
+        if not default_user:
+            # Create a default user if it doesn't exist
+            default_user = crud.create_user(db, schemas.UserCreate(
+                username="default_user",
+                email="default@example.com",
+                password="default"
+            ))
+        return default_user
+    except Exception as e:
+        # If there's any database error, return None instead of failing
+        print(f"Error in get_current_user_optional: {str(e)}")
+        return None
 
 async def get_current_user_required(db: Any = Depends(get_db)):
-    # Return a default user for open access
-    default_user = crud.get_user(db, "default_user")
-    if not default_user:
-        # Create a default user if it doesn't exist
-        default_user = crud.create_user(db, schemas.UserCreate(
-            username="default_user",
-            email="default@example.com",
-            password="default"
-        ))
-    return default_user
+    try:
+        # Return a default user for open access
+        default_user = crud.get_user(db, "default_user")
+        if not default_user:
+            # Create a default user if it doesn't exist
+            default_user = crud.create_user(db, schemas.UserCreate(
+                username="default_user",
+                email="default@example.com",
+                password="default"
+            ))
+        return default_user
+    except Exception as e:
+        # If there's any database error, return None instead of failing
+        print(f"Error in get_current_user_required: {str(e)}")
+        return None
 
 @router.post("/token", response_model=schemas.Token)
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: "Session" = Depends(get_db)):
@@ -154,18 +168,24 @@ async def get_available_personalities():
 @router.get("/chat/history")
 async def get_chat_history(
     limit: int = 20,
-    current_user = Depends(get_current_user_required),
+    current_user = Depends(get_current_user_optional),
     db: Any = Depends(get_db)
 ):
-    """Get user's chat history (requires authentication)."""
+    """Get user's chat history."""
     try:
+        if not current_user:
+            return {
+                "messages": [],
+                "total": 0
+            }
         messages = crud.get_recent_chat_history(db, current_user.id, limit)
         return {
             "messages": messages,
             "total": len(messages)
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error retrieving chat history: {str(e)}")
+        logger.error(f"Error retrieving chat history: {str(e)}")
+        raise HTTPException(status_code=500, detail="Internal server error occurred")
 
 @router.post("/journal/")
 async def create_journal_entry(journal: schemas.JournalCreate, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):

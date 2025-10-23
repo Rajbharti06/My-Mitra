@@ -56,18 +56,18 @@
 
 .nav-link:hover {
   color: var(--mm-primary);
-  background: #f0f6ff;
+  background: var(--hover-color);
 }
 
 .nav-link.active {
   color: var(--mm-primary);
-  background: #e8f0fb;
+  background: var(--hover-color);
   font-weight: 700;
 }
 
 .theme-toggle {
   background: transparent;
-  border: 1px solid #cdd6e1;
+  border: 1px solid var(--mm-border);
   border-radius: 8px;
   padding: 8px;
   cursor: pointer;
@@ -78,5 +78,5 @@
 }
 
 .theme-toggle:hover {
-  background: #f3f5f9;
+  background: var(--hover-color);
 }

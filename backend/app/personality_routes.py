@@ -9,9 +9,9 @@ from typing import List, Dict, Any
 import logging
 
 from .database import get_db
-from .security import get_current_user_optional
+from .routes import get_current_user_optional
 from .models import User
-from ..llm.ollama_model import OllamaMyMitraModel, PersonalityType
+from llm.ollama_model import OllamaMyMitraModel, PersonalityType
 
 logger = logging.getLogger(__name__)
 

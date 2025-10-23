@@ -1,6 +1,8 @@
+@import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;500;600;700&display=swap');
+
 body {
   margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
+  font-family: 'Nunito', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
     'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
     sans-serif;
   -webkit-font-smoothing: antialiased;
@@ -9,16 +11,51 @@ body {
 }
 
 :root {
-  --mm-bg: linear-gradient(180deg, #f6f9fc 0%, #eef3f8 100%);
-  --mm-surface: #ffffff;
-  --mm-border: #e6e9ef;
-  --mm-text: #1f3b56;
-  --mm-muted: #5f6b7a;
-  --mm-primary: #3a6ea5;
-  --mm-primary-hover: #2f5f90;
+  /* Autumn light theme */
+  --mm-bg: linear-gradient(180deg, #F6EEE3 0%, #FAF3E9 100%);
+  --mm-surface: #FFFFFF;
+  --mm-border: #EADBCF;
+  --mm-text: #2E2E2E;
+  --mm-muted: #6B4F4F;
+  --mm-primary: #6B4F4F; /* brownish accent */
+  --mm-primary-hover: #5A3F3F;
   --mm-success: #1aae9f;
   --mm-danger: #d9534f;
-  --mm-shadow: 0 8px 30px rgba(40, 70, 100, 0.08);
+  --mm-shadow: 0 8px 24px rgba(0, 0, 0, 0.10);
+  --bg-primary: #F6EEE3; /* cream background */
+  --bg-secondary: #FFFFFF;
+  --text-primary: #2E2E2E;
+  --text-secondary: #6B4F4F;
+  --border-color: #EADBCF;
+  --hover-color: #F2E7DB;
+  --primary-color: var(--mm-primary);
+  /* Chat bubble accents */
+  --mm-user-bubble: #E8C4A2; /* warm beige/orange */
+  --mm-ai-bubble: #FFF8F0; /* soft cream */
+}
+
+:root[data-theme="dark"] {
+  /* Autumn dark theme */
+  --mm-bg: #2E2E2E;
+  --mm-surface: #1F1F1F;
+  --mm-border: #3A3A3A;
+  --mm-text: #F0F0F0;
+  --mm-muted: #C9B6A6;
+  --mm-primary: #E8C4A2; /* warm accent on dark */
+  --mm-primary-hover: #D9B38F;
+  --mm-success: #10b981;
+  --mm-danger: #ef4444;
+  --mm-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+  --bg-primary: #2E2E2E;
+  --bg-secondary: #1F1F1F;
+  --text-primary: #F0F0F0;
+  --text-secondary: #C9B6A6;
+  --border-color: #3A3A3A;
+  --hover-color: #2A2A2A;
+  --primary-color: var(--mm-primary);
+  /* Chat bubble accents */
+  --mm-user-bubble: #6B4F4F; /* cozy brown for user bubble */
+  --mm-ai-bubble: #262626; /* deep charcoal for AI bubble */
 }
 
 code {

@@ -15,6 +15,9 @@ function Navbar({ darkMode, setDarkMode }) {
             <Link to="/journals" className={`nav-link ${location.pathname === '/journals' ? 'active' : ''}`}>Journals</Link>
             <Link to="/habits" className={`nav-link ${location.pathname === '/habits' ? 'active' : ''}`}>Habits</Link>
             <Link to="/insights" className={`nav-link ${location.pathname === '/insights' ? 'active' : ''}`}>Insights</Link>
+            <li>
+              <Link to="/" className={`nav-link ${location.pathname === '/' ? 'active' : ''}`}>Home</Link>
+            </li>
           </div>
         </div>
         <div className="nav-actions">

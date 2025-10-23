@@ -54,48 +54,40 @@ class Journal(Base):
     tags = Column(String, nullable=True)  # Comma-separated tags
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
+# Emotion models moved back here to avoid module/package conflicts
 class EmotionRecord(Base):
-    """Model for storing user emotion records over time"""
     __tablename__ = "emotion_records"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    timestamp = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Primary emotion data
+    timestamp = Column(DateTime, default=func.now())
+
     primary_emotion = Column(String, nullable=False)
     primary_intensity = Column(String, nullable=False)
     confidence = Column(Float, nullable=False)
-    
-    # Additional data
+
     sentiment_polarity = Column(Float)
     sentiment_subjectivity = Column(Float)
     detection_method = Column(String)
-    
-    # Source of the emotion detection
-    source_text = Column(Text)
-    source_type = Column(String, default="chat")  # chat, journal, etc.
-    
-    # Relationships
+
+    source_text = Column(String)
+    source_type = Column(String, default="chat")
+
     user = relationship("User", back_populates="emotion_records")
 
 class EmotionInsight(Base):
-    """Model for storing generated insights about user emotions"""
     __tablename__ = "emotion_insights"
-    
+
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id"))
-    generated_at = Column(DateTime(timezone=True), server_default=func.now())
-    
-    # Insight data
-    time_period = Column(String)  # day, week, month
-    insight_text = Column(Text, nullable=False)
-    
-    # Emotion statistics
+    generated_at = Column(DateTime, server_default=func.now())
+
+    time_period = Column(String)
+    insight_text = Column(String, nullable=False)
+
     dominant_emotion = Column(String)
-    emotion_distribution = Column(Text)  # JSON string of emotion distribution
-    
-    # Relationships
+    emotion_distribution = Column(String)  # JSON string
+
     user = relationship("User", back_populates="emotion_insights")
 
 class UserSettings(Base):
