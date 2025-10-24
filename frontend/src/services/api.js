@@ -38,27 +38,35 @@ export const getAvailablePersonalities = () => {
     return request('/chat/personalities');
 };
 
-export const getChatHistory = (limit = 20) => {
-    return request(`/chat/history?limit=${limit}`);
+export const getChatHistory = (limit = 20, sessionId = null) => {
+    const query = sessionId ? `?limit=${limit}&session_id=${encodeURIComponent(sessionId)}` : `?limit=${limit}`;
+    return request(`/chat/history${query}`);
 };
 
-export const switchPersonality = (personality) => {
-    return request('/chat/personality', {
-        method: 'POST',
-        body: JSON.stringify({ personality }),
+export const listSessions = () => {
+    return request('/chat/sessions');
+};
+
+export const deleteSession = (sessionId) => {
+    return request(`/chat/session/${encodeURIComponent(sessionId)}`, {
+        method: 'DELETE',
     });
 };
 
-// Habits
-export const getHabits = () => {
-    return request('/habits');
+export const deleteAllChats = () => {
+    return request('/chat/all', { method: 'DELETE' });
 };
 
-export const createHabit = (title, frequency, description = null) => {
+// Habit endpoints
+export const createHabit = (title, description, frequency) => {
     return request('/habits', {
         method: 'POST',
-        body: JSON.stringify({ title, frequency, description }),
+        body: JSON.stringify({ title, description, frequency }),
     });
+};
+
+export const getHabits = () => {
+    return request('/habits');
 };
 
 export const completeHabit = (habitId) => {
@@ -67,10 +75,10 @@ export const completeHabit = (habitId) => {
     });
 };
 
-export const updateHabit = (habitId, habitData) => {
+export const updateHabit = (habitId, updates) => {
     return request(`/habits/${habitId}`, {
         method: 'PUT',
-        body: JSON.stringify(habitData),
+        body: JSON.stringify(updates),
     });
 };
 
@@ -93,27 +101,20 @@ export const createJournal = (title, content) => {
     });
 };
 
-// Insights
+// Insights & health
 export const getInsights = () => {
     return request('/insights');
 };
 
-// Authentication helpers (open access defaults)
-export const logout = () => {
-    localStorage.removeItem('access_token');
-    localStorage.removeItem('token_type');
-};
-
-export const isAuthenticated = () => {
-    return true; // Always authenticated for open access
-};
-
-// Health check
 export const healthCheck = () => {
     return request('/health');
 };
 
-// Export data
 export const exportData = () => {
-    return request('/me/export');
+    return request('/export');
 };
+
+// Auth-like helpers (stubs for now)
+export const isAuthenticated = () => true;
+export const logout = () => Promise.resolve({ message: 'Logged out' });
+export const switchPersonality = (type) => request(`/personality/switch/${type}`, { method: 'POST' });

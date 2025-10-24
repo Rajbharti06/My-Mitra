@@ -1,6 +1,7 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
-import { CheckCircle2, Circle, Target, TrendingUp } from 'lucide-react';
+import { CheckCircle2, Circle, Target, TrendingUp, Trash2, Plus } from 'lucide-react';
+import * as api from '../services/api';
 
 const defaultHabits = [
   { id: 1, name: 'Morning Meditation', progress: 85, target: 100, icon: '🧘' },
@@ -12,15 +13,82 @@ const defaultHabits = [
 
 const HabitTracker = ({ habits = defaultHabits, compact = false }) => {
   const [localHabits, setLocalHabits] = useState(habits);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [newTitle, setNewTitle] = useState('');
+  const [newFrequency, setNewFrequency] = useState('daily');
+  const [newDescription, setNewDescription] = useState('');
 
-  const toggleHabit = (habitId) => {
-    setLocalHabits(prev => 
-      prev.map(habit => 
-        habit.id === habitId 
+  const toggleHabit = async (habitId) => {
+    setLocalHabits(prev =>
+      prev.map(habit =>
+        habit.id === habitId
           ? { ...habit, progress: habit.progress >= 100 ? 0 : 100 }
           : habit
       )
     );
+    // Try to mark complete in backend if this is a real habit id
+    try {
+      await api.completeHabit(habitId);
+    } catch (e) {
+      // ignore; completion not critical for add/delete feature
+    }
+  };
+
+  // Map backend habit data to chart items
+  const mapHabitsToChart = useCallback((items) => (
+    items.map(h => ({
+      id: h.id,
+      name: h.title,
+      progress: Math.min(100, (h.streak_count || 0) * 10),
+      target: 100,
+      icon: '⭐'
+    }))
+  ), []);
+
+  const fetchHabits = useCallback(async () => {
+    setLoading(true);
+    setError('');
+    try {
+      const data = await api.getHabits();
+      setLocalHabits(mapHabitsToChart(data));
+    } catch (e) {
+      setError('Could not load habits');
+    } finally {
+      setLoading(false);
+    }
+  }, [mapHabitsToChart]);
+
+  useEffect(() => { fetchHabits(); }, [fetchHabits]);
+
+  const handleAddHabit = async () => {
+    if (!newTitle.trim()) {
+      setError('Please enter habit title');
+      return;
+    }
+    setError('');
+    try {
+      await api.createHabit(newTitle.trim(), newFrequency, newDescription || null);
+      setNewTitle('');
+      setNewFrequency('daily');
+      setNewDescription('');
+      await fetchHabits();
+    } catch (e) {
+      setError(e.message || 'Could not create habit');
+    }
+  };
+
+  const handleDeleteHabit = async (habitId) => {
+    setError('');
+    try {
+      await api.deleteHabit(habitId);
+      await fetchHabits();
+    } catch (e) {
+      setError(e.message || 'Could not delete habit');
+    } finally {
+      setConfirmDeleteId(null);
+    }
   };
 
   const getProgressColor = (progress) => {
@@ -115,7 +183,42 @@ const HabitTracker = ({ habits = defaultHabits, compact = false }) => {
           <span>{localHabits.filter(h => h.progress >= 100).length}/{localHabits.length} completed</span>
         </div>
       </div>
-      
+
+      {error && (
+        <div className="mb-4 text-sm text-red-600">{error}</div>
+      )}
+
+      {/* Inline Add New Habit */}
+      <div className="mb-6 flex flex-wrap items-center gap-3">
+        <input
+          className="flex-1 min-w-52 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-warm-brown"
+          placeholder="New habit title"
+          value={newTitle}
+          onChange={e => setNewTitle(e.target.value)}
+        />
+        <select
+          className="px-3 py-2 rounded-lg border border-gray-300"
+          value={newFrequency}
+          onChange={e => setNewFrequency(e.target.value)}
+        >
+          <option value="daily">Daily</option>
+          <option value="weekly">Weekly</option>
+          <option value="monthly">Monthly</option>
+        </select>
+        <input
+          className="flex-1 min-w-52 px-3 py-2 rounded-lg border border-gray-300"
+          placeholder="Description (optional)"
+          value={newDescription}
+          onChange={e => setNewDescription(e.target.value)}
+        />
+        <button
+          onClick={handleAddHabit}
+          className="px-4 py-2 rounded-lg bg-warm-brown text-white font-semibold flex items-center gap-2 hover:bg-warm-brown/90"
+        >
+          <Plus className="w-4 h-4" /> Add
+        </button>
+      </div>
+
       <div className="space-y-4">
         {localHabits.map((habit, index) => (
           <motion.div
@@ -140,7 +243,7 @@ const HabitTracker = ({ habits = defaultHabits, compact = false }) => {
                   </p>
                 </div>
               </div>
-              
+
               <div className="flex items-center space-x-2">
                 <span className={`text-sm font-semibold ${getProgressColor(habit.progress)}`}>
                   {habit.progress}%
@@ -150,9 +253,16 @@ const HabitTracker = ({ habits = defaultHabits, compact = false }) => {
                 ) : (
                   <Circle className="w-6 h-6 text-gray-400 group-hover:text-warm-brown dark:group-hover:text-dark-accent transition-colors" />
                 )}
+                <button
+                  className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600 transition"
+                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(habit.id); }}
+                  title="Delete habit"
+                >
+                  <Trash2 className="w-5 h-5" />
+                </button>
               </div>
             </div>
-            
+
             <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 overflow-hidden">
               <motion.div
                 className={`h-full ${getProgressBg(habit.progress)} rounded-full`}
@@ -161,10 +271,27 @@ const HabitTracker = ({ habits = defaultHabits, compact = false }) => {
                 transition={{ duration: 0.8, delay: index * 0.1 }}
               />
             </div>
+
+            {confirmDeleteId === habit.id && (
+              <div className="mt-3 flex justify-end gap-2">
+                <button
+                  className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200"
+                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
+                >
+                  Cancel
+                </button>
+                <button
+                  className="px-3 py-1 rounded bg-red-500 text-white"
+                  onClick={(e) => { e.stopPropagation(); handleDeleteHabit(habit.id); }}
+                >
+                  Delete
+                </button>
+              </div>
+            )}
           </motion.div>
         ))}
       </div>
-      
+
       <motion.div
         className="mt-6 p-4 bg-warm-brown/5 dark:bg-dark-accent/5 rounded-xl border border-warm-brown/10 dark:border-dark-accent/10"
         initial={{ opacity: 0 }}

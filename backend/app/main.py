@@ -31,7 +31,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Ensure DB schema is up to date (add missing columns)
+# Ensure DB schema is up to date (add missing columns and performance indexes)
 def ensure_db_schema():
     try:
         from .database import engine
@@ -45,81 +45,30 @@ def ensure_db_schema():
                 conn.exec_driver_sql("ALTER TABLE users ADD COLUMN is_active INTEGER DEFAULT 1")
             if "created_at" not in cols:
                 conn.exec_driver_sql("ALTER TABLE users ADD COLUMN created_at DATETIME DEFAULT CURRENT_TIMESTAMP")
+
+            # Create helpful indexes for chat performance (safe with IF NOT EXISTS)
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_chat_messages_session_id ON chat_messages(session_id)")
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_chat_messages_user_session_created ON chat_messages(user_id, session_id, created_at)")
     except Exception as e:
         logger.warning(f"Schema check failed: {e}")
 
-# Create database tables
-models.Base.metadata.create_all(bind=engine)
-
 # Initialize FastAPI app
-app = FastAPI(
-    title="My Mitra: Builder's Redemption",
-    description="An emotional AI companion for students with offline support and privacy-first design",
-    version="2.0.0",
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None
-)
+app = FastAPI(title="My Mitra: Builder's Redemption", version="2.0.0")
 
 # CORS configuration
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.ALLOWED_ORIGINS,
-    allow_origin_regex=".*",
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global exception handler
-@app.exception_handler(Exception)
-async def global_exception_handler(request, exc):
-    logger.error(f"Global exception: {exc}", exc_info=True)
-    return JSONResponse(
-        status_code=500,
-        content={"detail": "Internal server error occurred"}
-    )
+# Create tables
+models.Base.metadata.create_all(bind=engine)
 
-# Startup event
-@app.on_event("startup")
-async def startup_event():
-    """Initialize services on startup."""
-    logger.info("Starting My Mitra backend...")
-    # Ensure DB schema before using models
-    ensure_db_schema()
-    
-    # Validate configuration
-    if not settings.validate_config() and not settings.DEBUG:
-        logger.error("Invalid configuration detected!")
-        raise HTTPException(status_code=500, detail="Server configuration error")
-    
-    # Test Ollama connection
-    try:
-        ollama_model = OllamaMyMitraModel()
-        if ollama_model._check_ollama_connection():
-            logger.info("✅ Ollama connection successful")
-        else:
-            logger.warning("⚠️ Ollama not available - using fallback responses")
-    except Exception as e:
-        logger.warning(f"⚠️ Ollama initialization failed: {e}")
-    
-    logger.info("🚀 My Mitra backend started successfully!")
-
-# Shutdown event
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown."""
-    logger.info("Shutting down My Mitra backend...")
-
-# Health check endpoint
-@app.get("/health")
-async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "service": "My Mitra Backend",
-        "version": "2.0.0",
-        "ollama_available": OllamaMyMitraModel()._check_ollama_connection()
-    }
+# Ensure schema adjustments
+ensure_db_schema()
 
 # Include API routes
 app.include_router(router, prefix="/api/v1")
@@ -137,19 +86,5 @@ app.include_router(emotions_router, prefix="/api/v1")
 
 # Root endpoint
 @app.get("/")
-async def root():
-    """Root endpoint with service information."""
-    return {
-        "service": "My Mitra: Builder's Redemption",
-        "description": "An emotional AI companion for students",
-        "version": "2.0.0",
-        "status": "running",
-        "features": [
-            "Offline AI support via Ollama",
-            "Multiple AI personalities",
-            "Encrypted chat storage",
-            "Habit tracking",
-            "Journaling",
-            "Privacy-first design"
-        ]
-    }
+def root():
+    return {"message": "Welcome to My Mitra API"}

@@ -8,8 +8,11 @@ import { Edit, Trash2 } from 'lucide-react';
 function Habits() {
   const [items, setItems] = useState([]);
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [isOnline, setIsOnline] = useState(navigator.onLine);
   const [habitToEdit, setHabitToEdit] = useState(null);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+  const [lastAction, setLastAction] = useState(null); // { type: 'delete'|'update'|'create', habitId?, previous?, next? }
 
   // Local progress storage: { [habitId]: { [YYYY-MM-DD]: percent } }
   const getProgressStore = () => {
@@ -19,9 +22,9 @@ function Habits() {
     } catch { return {}; }
   };
   const saveProgressStore = (store) => {
-    localStorage.setItem('habitProgress', JSON.stringify(store));
+    try { localStorage.setItem('habitProgress', JSON.stringify(store)); } catch {}
   };
-  const getToday = () => new Date().toISOString().split('T')[0];
+  const getToday = () => new Date().toISOString().slice(0, 10);
   const getTodayPercent = (habitId) => {
     const store = getProgressStore();
     return store[habitId]?.[getToday()] ?? null;
@@ -31,6 +34,16 @@ function Habits() {
     if (!store[habitId]) store[habitId] = {};
     store[habitId][getToday()] = percent;
     saveProgressStore(store);
+  };
+
+  // Simple audit logging in localStorage for habit changes
+  const getAuditLog = () => {
+    try { return JSON.parse(localStorage.getItem('habitAuditLog') || '[]'); } catch { return []; }
+  };
+  const logAudit = (action, payload) => {
+    const log = getAuditLog();
+    log.push({ action, payload, ts: new Date().toISOString() });
+    try { localStorage.setItem('habitAuditLog', JSON.stringify(log)); } catch {}
   };
 
   useEffect(() => {
@@ -63,6 +76,7 @@ function Habits() {
 
   const createHabit = async (name, frequency, description = null) => {
     setError('');
+    setSuccess('');
     if (!isOnline) {
       if (!hasPassphrase()) {
         setError('Set encryption passphrase in Chat Preferences to enable secure offline queue.');
@@ -71,22 +85,21 @@ function Habits() {
       const ok = enqueueHabit(name, frequency, description);
       if (ok) {
         setItems(prev => [...prev, { id: Math.random().toString(36).slice(2), title: name, frequency, description, streak_count: 0 }]);
+        setSuccess('Habit queued for creation (offline).');
+        logAudit('create_offline', { title: name, frequency, description });
       }
       return;
     }
     try {
-      await api.createHabit(name, frequency, description);
+      const created = await api.createHabit(name, frequency, description);
       // Request notification permission and schedule notification
       if ('Notification' in window && Notification.permission === 'default') {
         Notification.requestPermission().then(permission => {
           if (permission === 'granted') {
-            console.log('Notification permission granted.');
-          } else {
-            console.log('Notification permission denied.');
+            // ok
           }
         });
       }
-      // Schedule a notification for the new habit (this is a placeholder, actual scheduling will be more complex)
       if ('Notification' in window && Notification.permission === 'granted') {
         navigator.serviceWorker.ready.then(registration => {
           registration.showNotification(`Habit Created: ${name}`, {
@@ -96,39 +109,96 @@ function Habits() {
           });
         });
       }
+      setSuccess('Habit created successfully.');
+      setTimeout(() => setSuccess(''), 3000);
+      setLastAction({ type: 'create', next: created });
+      logAudit('create', created);
       fetchList();
     } catch (e) {
       setError(e.message || 'Could not create habit');
       throw e; // re-throw to be caught by the form
     }
   };
-  
+
   const updateHabit = async (habitId, name, frequency, description = null) => {
     setError('');
+    setSuccess('');
     if (!isOnline) {
       setError('Cannot update habits while offline');
       throw new Error('Offline mode');
     }
+    const previous = items.find(x => x.id === habitId);
     try {
       await api.updateHabit(habitId, { title: name, frequency, description });
+      setSuccess('Habit updated successfully.');
+      setTimeout(() => setSuccess(''), 3000);
+      setLastAction({ type: 'update', habitId, previous, next: { title: name, frequency, description } });
+      logAudit('update', { habitId, previous, next: { title: name, frequency, description } });
       fetchList();
     } catch (e) {
-      setError(e.message || 'Could not update habit');
+      const msg = e.message || 'Could not update habit';
+      if (msg.includes('status 409') || msg.includes('status 412')) {
+        setError('Update conflict detected. Reloading latest data...');
+        await fetchList();
+      } else {
+        setError(msg);
+      }
       throw e;
     }
   };
-  
+
   const deleteHabit = async (habitId) => {
     setError('');
+    setSuccess('');
     if (!isOnline) {
       setError('Cannot delete habits while offline');
       return;
     }
+    const previous = items.find(x => x.id === habitId);
     try {
       await api.deleteHabit(habitId);
+      setSuccess('Habit deleted.');
+      setTimeout(() => setSuccess(''), 3000);
+      setLastAction({ type: 'delete', previous });
+      logAudit('delete', previous);
       fetchList();
     } catch (e) {
-      setError(e.message || 'Could not delete habit');
+      const msg = e.message || 'Could not delete habit';
+      if (msg.includes('status 409') || msg.includes('status 412')) {
+        setError('Delete conflict detected. Reloading latest data...');
+        await fetchList();
+      } else {
+        setError(msg);
+      }
+    }
+  };
+
+  const undoLastAction = async () => {
+    if (!lastAction) return;
+    try {
+      if (lastAction.type === 'delete' && lastAction.previous) {
+        await api.createHabit(lastAction.previous.title, lastAction.previous.frequency, lastAction.previous.description);
+        setSuccess('Deletion undone. Habit restored.');
+        logAudit('undo_delete', lastAction.previous);
+      } else if (lastAction.type === 'update' && lastAction.previous && lastAction.habitId) {
+        await api.updateHabit(lastAction.habitId, {
+          title: lastAction.previous.title,
+          frequency: lastAction.previous.frequency,
+          description: lastAction.previous.description
+        });
+        setSuccess('Update undone. Habit reverted.');
+        logAudit('undo_update', { habitId: lastAction.habitId, restored: lastAction.previous });
+      } else if (lastAction.type === 'create' && lastAction.next?.id) {
+        // If we have the created id, attempt to delete the newly created habit
+        try { await api.deleteHabit(lastAction.next.id); } catch {}
+        setSuccess('Creation undone. Habit removed.');
+        logAudit('undo_create', lastAction.next);
+      }
+      setTimeout(() => setSuccess(''), 3000);
+      setLastAction(null);
+      await fetchList();
+    } catch (e) {
+      setError(e.message || 'Failed to undo last action');
     }
   };
 
@@ -142,14 +212,24 @@ function Habits() {
         setHabitToEdit={setHabitToEdit} 
       />
       {error && <p style={{ color: '#c0392b' }}>{error}</p>}
-      <div style={{ display: 'grid', gap: 12 }}>
+      {success && <p style={{ color: '#2e7d32' }}>{success}</p>}
+      {lastAction && (
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 12 }}>
+          <span style={{ color: '#7a8a9e', fontSize: 12 }}>Last action: {lastAction.type}. You can undo.</span>
+          <button onClick={undoLastAction} style={{ padding: '6px 12px', borderRadius: 6, border: '1px solid #3a6ea5', background: '#3a6ea5', color: '#fff', fontSize: 12 }}>Undo</button>
+        </div>
+      )}
+      <div style={{ display: 'grid', gap: 12, gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
         {items.map(it => (
           <div key={it.id} style={card}>
             <div style={{ fontSize: 12, color: '#7a8a9e', display: 'flex', justifyContent: 'space-between' }}>
               <span>#{it.id}</span>
               <span>Streak: {it.streak_count || 0} 🔥</span>
             </div>
-            <div style={{ fontWeight: 700 }}>{it.title}</div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontWeight: 700 }}>{it.title}</div>
+              <span style={{ fontSize: 11, color: '#4caf50' }}>Editable</span>
+            </div>
             {it.description && (
               <div style={{ fontSize: 13, color: '#555', marginTop: 4 }}>{it.description}</div>
             )}
@@ -205,11 +285,7 @@ function Habits() {
                 <Edit size={14} />
               </button>
               <button
-                onClick={() => {
-                  if (window.confirm('Are you sure you want to delete this habit?')) {
-                    deleteHabit(it.id);
-                  }
-                }}
+                onClick={() => setConfirmDeleteId(it.id)}
                 style={{
                   padding: '6px 12px',
                   borderRadius: 6,
@@ -225,6 +301,36 @@ function Habits() {
                 <Trash2 size={14} />
               </button>
             </div>
+            {confirmDeleteId === it.id && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <button
+                  onClick={() => { deleteHabit(it.id); setConfirmDeleteId(null); }}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #f44336',
+                    background: '#f44336',
+                    color: '#fff',
+                    fontSize: 12
+                  }}
+                >
+                  Confirm Delete
+                </button>
+                <button
+                  onClick={() => setConfirmDeleteId(null)}
+                  style={{
+                    padding: '6px 12px',
+                    borderRadius: 6,
+                    border: '1px solid #6c757d',
+                    background: '#6c757d',
+                    color: '#fff',
+                    fontSize: 12
+                  }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </div>
         ))}
       </div>

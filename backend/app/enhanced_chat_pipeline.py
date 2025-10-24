@@ -23,16 +23,15 @@ from . import crud
 logger = logging.getLogger(__name__)
 
 class EnhancedChatPipeline:
-    """
-    Enhanced chat pipeline that integrates Ollama AI with personality support,
-    long-term memory, and encrypted chat storage.
-    """
-    
+    """Enhanced chat pipeline with personality, memory, and caching."""
+
     def __init__(self):
-        self.ollama_model = OllamaMyMitraModel()
-        self.long_term_memory = LongTermMemory() if not os.environ.get("MYMITRA_ECHO_ONLY") else None
-        self.echo_only = os.environ.get("MYMITRA_ECHO_ONLY") == "1"
-        
+        self.model = OllamaMyMitraModel()
+        try:
+            self.long_term_memory = LongTermMemory()
+        except Exception:
+            self.long_term_memory = None
+
     def get_mitra_reply(
         self,
         user_input: str,
@@ -41,156 +40,69 @@ class EnhancedChatPipeline:
         personality: Optional[str] = None,
         session_id: Optional[str] = None
     ) -> Dict[str, Any]:
-        """
-        Generate a response from My Mitra with personality and memory support.
-        
-        Args:
-            user_input: The user's message
-            user_id: User ID for personalization and storage
-            db: Database session for storing chat history
-            personality: Specific personality to use (overrides user preference)
-            session_id: Session ID for grouping conversations
-            
-        Returns:
-            Dictionary containing response and metadata
-        """
-        
-        # Handle echo-only mode for testing
-        if self.echo_only:
-            return {
-                "response": f"[ECHO MODE] You said: {user_input}",
-                "personality_used": personality or "default",
-                "session_id": session_id,
-                "memory_used": False
-            }
-        
+        """Get Mitra AI reply; store and use session-specific context when available."""
+        # Determine personality
+        personality_used = self._determine_personality(user_id, personality, db)
+        personality_type = self._string_to_personality_enum(personality_used)
+
+        # Build context (recent conversation for this session only)
+        context_messages: List[Dict[str, str]] = []
+        if user_id and db:
+            context_messages = self._get_conversation_context(user_id, db, session_id=session_id)
+
+        # Check cached response path for general FAQs
+        normalized_q = self._normalize_question(user_input)
+        cached = None
+        if db:
+            try:
+                cached = crud.get_cached_response(db, normalized_q, personality_used)
+            except Exception:
+                cached = None
+
+        if cached:
+            ai_text = cached
+            memory_used = False
+        else:
+            # Generate response via model
+            ai_text = self.model.generate_response(user_input, personality_type, context_messages)
+            memory_used = bool(context_messages)
+
+        # Persist conversation if authenticated
         try:
-            # Determine personality to use
-            active_personality = self._determine_personality(user_id, personality, db)
-            
-            # Set the AI model personality
-            personality_enum = self._string_to_personality_enum(active_personality)
-            self.ollama_model.set_personality(personality_enum)
-            
-            # Get conversation context
-            conversation_history = self._get_conversation_context(user_id, db) if user_id and db else []
-            
-            # Get long-term memory context
-            memory_context = self._get_memory_context(user_input, user_id) if user_id else []
-
-            # Try fast cache path for general FAQs (no personal context)
-            question_key = self._normalize_question(user_input)
-            ai_response = None
-            cache_used = False
-            if db and not memory_context and not conversation_history:
-                cached = crud.get_cached_response(db, question_key, active_personality)
-                if cached:
-                    ai_response = cached
-                    cache_used = True
-            
-            # Generate AI response (fast mode prioritized) if cache miss
-            if ai_response is None:
-                ai_response = self.ollama_model.generate_response(
-                    user_input=user_input,
-                    conversation_history=conversation_history,
-                    long_term_memory_context=memory_context,
-                    fast_mode=True
-                )
-            
-            # Store the conversation if user is logged in
             if user_id and db:
-                self._store_conversation(
-                    db=db,
-                    user_id=user_id,
-                    user_message=user_input,
-                    ai_response=ai_response,
-                    personality_used=active_personality,
-                    session_id=session_id
-                )
-                
-                # Update long-term memory
-                if self.long_term_memory:
-                    self._update_memory(user_id, user_input, ai_response)
-            
-            result = {
-                "response": ai_response,
-                "personality_used": active_personality,
-                "session_id": session_id,
-                "memory_used": len(memory_context) > 0,
-                "personality_info": self.ollama_model.get_current_personality_info(),
-                "cache_used": cache_used
-            }
-
-            # Persist a cache entry for general FAQs (no personal context)
-            if db and not memory_context and not conversation_history and not cache_used:
-                try:
-                    crud.upsert_cached_response(db, question_key, active_personality, ai_response)
-                except Exception:
-                    pass
-
-            return result
-            
+                self._store_conversation(db, user_id, user_input, ai_text, personality_used, session_id)
         except Exception as e:
-            logger.error(f"Error in chat pipeline: {e}")
-            return {
-                "response": "I'm having some technical difficulties right now, but I'm still here for you. Could you try again? 💙",
-                "personality_used": personality or "default",
-                "session_id": session_id,
-                "memory_used": False,
-                "error": str(e)
-            }
-    
+            logger.error(f"Conversation store failed: {e}")
+
+        return {
+            "response": ai_text,
+            "personality_used": personality_used,
+            "session_id": session_id or str(uuid.uuid4()),
+            "memory_used": memory_used,
+            "personality_info": {"type": personality_used}
+        }
+
     def switch_personality(
         self,
         personality: str,
         user_id: Optional[int] = None,
         db: Optional[Session] = None
     ) -> Dict[str, Any]:
-        """
-        Switch the AI personality and optionally save as user preference.
-        
-        Args:
-            personality: New personality type
-            user_id: User ID to save preference
-            db: Database session
-            
-        Returns:
-            Dictionary with personality info and success status
-        """
-        try:
-            # Validate personality
-            if personality not in ["default", "mentor", "motivator", "coach", "mitra"]:
-                return {
-                    "success": False,
-                    "error": "Invalid personality type",
-                    "available_personalities": self.get_available_personalities()
-                }
-            
-            # Set the personality
-            personality_enum = self._string_to_personality_enum(personality)
-            self.ollama_model.set_personality(personality_enum)
-            
-            # Save as user preference if logged in
-            if user_id and db:
-                crud.update_user_personality(db, user_id, personality)
-            
-            return {
-                "success": True,
-                "personality_info": self.ollama_model.get_current_personality_info(),
-                "message": f"Switched to {personality} mode! 🎭"
-            }
-            
-        except Exception as e:
-            logger.error(f"Error switching personality: {e}")
-            return {
-                "success": False,
-                "error": str(e)
-            }
-    
+        personality_used = self._determine_personality(user_id, personality, db)
+        return {
+            "status": "ok",
+            "personality_used": personality_used
+        }
+
     def get_available_personalities(self) -> List[Dict[str, str]]:
-        """Get list of available AI personalities."""
-        return self.ollama_model.get_available_personalities()
-    
+        return [
+            {"type": "default", "name": "Default", "description": "Balanced, helpful assistant"},
+            {"type": "mentor", "name": "Mentor", "description": "Guides with experience"},
+            {"type": "motivator", "name": "Motivator", "description": "Encouraging and uplifting"},
+            {"type": "coach", "name": "Coach", "description": "Action-oriented guidance"},
+            {"type": "mitra", "name": "Mitra", "description": "Warm, wise, friendly companion"},
+        ]
+
     def _determine_personality(
         self, 
         user_id: Optional[int], 
@@ -223,10 +135,10 @@ class EnhancedChatPipeline:
         }
         return mapping.get(personality_str, PersonalityType.DEFAULT)
     
-    def _get_conversation_context(self, user_id: int, db: Session) -> List[Dict[str, str]]:
-        """Get recent conversation history for context."""
+    def _get_conversation_context(self, user_id: int, db: Session, session_id: Optional[str] = None) -> List[Dict[str, str]]:
+        """Get recent conversation history for context, scoped to session if provided."""
         try:
-            return crud.get_recent_chat_history(db, user_id, limit=8)
+            return crud.get_recent_chat_history(db, user_id, limit=8, session_id=session_id)
         except Exception as e:
             logger.error(f"Error getting conversation context: {e}")
             return []

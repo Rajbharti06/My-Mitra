@@ -19,6 +19,9 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
+# Security dependencies
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+
 def get_db():
     db = SessionLocal()
     try:
@@ -26,55 +29,20 @@ def get_db():
     finally:
         db.close()
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
-
-async def get_current_user_optional(db: Any = Depends(get_db)):
+async def get_current_user_optional(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
+    if not token:
+        return None
     try:
-        # Return a default user for open access
-        default_user = crud.get_user(db, "default_user")
-        if not default_user:
-            # Create a default user if it doesn't exist
-            default_user = crud.create_user(db, schemas.UserCreate(
-                username="default_user",
-                email="default@example.com",
-                password="default"
-            ))
-        return default_user
-    except Exception as e:
-        # If there's any database error, return None instead of failing
-        print(f"Error in get_current_user_optional: {str(e)}")
+        user = security.get_current_user(token, db)
+        return user
+    except Exception:
         return None
 
-async def get_current_user_required(db: Any = Depends(get_db)):
-    try:
-        # Return a default user for open access
-        default_user = crud.get_user(db, "default_user")
-        if not default_user:
-            # Create a default user if it doesn't exist
-            default_user = crud.create_user(db, schemas.UserCreate(
-                username="default_user",
-                email="default@example.com",
-                password="default"
-            ))
-        return default_user
-    except Exception as e:
-        # If there's any database error, return None instead of failing
-        print(f"Error in get_current_user_required: {str(e)}")
-        return None
-
-@router.post("/token", response_model=schemas.Token)
-async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: "Session" = Depends(get_db)):
-    user = crud.get_user(db, username=form_data.username)
-    if not user or not security.verify_password(form_data.password, user.hashed_password):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect username or password",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    access_token = security.create_access_token(
-        data={"sub": user.username}
-    )
-    return {"access_token": access_token, "token_type": "bearer"}
+async def get_current_user_required(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
+    user = security.get_current_user(token, db)
+    if not user:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    return user
 
 @router.post("/register", response_model=schemas.User)
 def create_user(user: "schemas.UserCreate", db: "Session" = Depends(get_db)):
@@ -119,45 +87,13 @@ async def chat_with_mymitra(
                 confidence=emotion_result.confidence,
                 sentiment_polarity=emotion_result.sentiment_scores.get("polarity", 0),
                 sentiment_subjectivity=emotion_result.sentiment_scores.get("subjectivity", 0),
-                detection_method=emotion_result.detection_method,
-                source_text=message.message,
-                source_type="chat"
+                text_snapshot=encryption_utils.encrypt_data(message.message).encode('utf-8')
             )
             db.add(emotion_record)
             db.commit()
-            
-            # Add emotion data to response
-            result["emotion_detected"] = {
-                "primary_emotion": emotion_result.category.value,
-                "intensity": emotion_result.intensity.value,
-                "confidence": emotion_result.confidence
-            }
         except Exception as e:
-            # Log error but don't fail the chat request
-            print(f"Error in emotion detection: {e}")
-            pass
+            logger.error(f"Emotion analysis failed: {e}")
     
-    return {
-        "response": result["response"],
-        "personality_used": result["personality_used"],
-        "session_id": result["session_id"],
-        "memory_used": result.get("memory_used", False),
-        "personality_info": result.get("personality_info", {}),
-        "user_authenticated": current_user is not None
-    }
-
-@router.post("/chat/personality", response_model=dict)
-async def switch_personality(
-    personality_data: schemas.PersonalitySwitch,
-    current_user = Depends(get_current_user_optional),
-    db: Any = Depends(get_db)
-):
-    """Switch AI personality mode."""
-    result = enhanced_chat_pipeline.switch_personality(
-        personality=personality_data.personality,
-        user_id=current_user.id if current_user else None,
-        db=db if current_user else None
-    )
     return result
 
 @router.get("/chat/personalities", response_model=List[schemas.PersonalityInfo])
@@ -168,17 +104,18 @@ async def get_available_personalities():
 @router.get("/chat/history")
 async def get_chat_history(
     limit: int = 20,
+    session_id: Optional[str] = None,
     current_user = Depends(get_current_user_optional),
     db: Any = Depends(get_db)
 ):
-    """Get user's chat history."""
+    """Get user's chat history, optionally scoped to a session."""
     try:
         if not current_user:
             return {
                 "messages": [],
                 "total": 0
             }
-        messages = crud.get_recent_chat_history(db, current_user.id, limit)
+        messages = crud.get_recent_chat_history(db, current_user.id, limit, session_id=session_id)
         return {
             "messages": messages,
             "total": len(messages)
@@ -187,6 +124,56 @@ async def get_chat_history(
         logger.error(f"Error retrieving chat history: {str(e)}")
         raise HTTPException(status_code=500, detail="Internal server error occurred")
 
+@router.get("/chat/sessions")
+async def list_sessions(
+    current_user = Depends(get_current_user_required),
+    db: Any = Depends(get_db)
+):
+    """List distinct chat sessions for the authenticated user."""
+    try:
+        sessions = crud.list_chat_sessions(db, current_user.id)
+        return {"sessions": sessions}
+    except Exception as e:
+        logger.error(f"Error listing sessions: {e}")
+        raise HTTPException(status_code=500, detail="Failed to list sessions")
+
+@router.delete("/chat/session/{session_id}")
+async def delete_chat_session(
+    session_id: str,
+    current_user = Depends(get_current_user_required),
+    db: Any = Depends(get_db)
+):
+    """Delete all messages within a specific chat session and verify deletion."""
+    try:
+        deleted_count = crud.delete_chat_session(db, current_user.id, session_id)
+        # Verify deletion by re-querying
+        remaining = crud.get_recent_chat_history(db, current_user.id, limit=1, session_id=session_id)
+        return {
+            "deleted": deleted_count,
+            "verified": len(remaining) == 0
+        }
+    except Exception as e:
+        logger.error(f"Error deleting session {session_id}: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete session")
+
+@router.delete("/chat/all")
+async def delete_all_chats(
+    current_user = Depends(get_current_user_required),
+    db: Any = Depends(get_db)
+):
+    """Delete all chat messages for the authenticated user."""
+    try:
+        deleted_count = crud.delete_all_chats(db, current_user.id)
+        # Verify deletion
+        remaining_total = len(crud.get_recent_chat_history(db, current_user.id, limit=1))
+        return {
+            "deleted": deleted_count,
+            "verified": remaining_total == 0
+        }
+    except Exception as e:
+        logger.error(f"Error deleting all chats: {e}")
+        raise HTTPException(status_code=500, detail="Failed to delete all chats")
+
 @router.post("/journal/")
 async def create_journal_entry(journal: schemas.JournalCreate, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
     return crud.create_journal(db, user_id=current_user.id, journal=journal)
@@ -194,27 +181,6 @@ async def create_journal_entry(journal: schemas.JournalCreate, db: "Session" = D
 @router.get("/journal/")
 async def list_journal_entries(db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
     return crud.list_journals(db, user_id=current_user.id)
-
-@router.post("/habit/")
-async def create_habit_entry(habit: schemas.HabitCreate, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
-    return crud.create_habit(db, user_id=current_user.id, habit=habit)
-
-@router.get("/habit/")
-async def list_habit_entries(db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
-    return crud.list_habits(db, user_id=current_user.id)
-
-@router.get("/insights/")
-async def get_user_insights(db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
-    habits = crud.list_habits(db, user_id=current_user.id)
-    journals = crud.list_journals(db, user_id=current_user.id)
-    return {
-        "summary": {
-            "habit_count": len(habits),
-            "journal_count": len(journals)
-        },
-        "habits": habits,
-        "journals": journals
-    }
 
 @router.post("/habits", response_model=schemas.Habit)
 def create_habit(habit: "schemas.HabitCreate", db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
@@ -285,43 +251,3 @@ def get_insights(db: "Session" = Depends(get_db), current_user=Depends(get_curre
         "habits": habits,
         "journals": journals
     }
-
-@router.get("/me/export")
-def export_data(db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
-    habits = crud.list_habits(db, user_id=current_user.id)
-    journals = crud.list_journals(db, user_id=current_user.id)
-
-    export_data = {
-        "user": current_user.username,
-        "habits": [
-            {
-                "id": habit.id,
-                "title": habit.title,
-                "description": habit.description,
-                "frequency": habit.frequency,
-                "streak_count": habit.streak_count,
-                "last_completed": habit.last_completed.isoformat() if habit.last_completed else None,
-                "created_at": habit.created_at.isoformat(),
-                "updated_at": habit.updated_at.isoformat()
-            } for habit in habits
-        ],
-        "journals": [
-            {
-                "id": journal.id,
-                "content": journal.content,
-                "mood": journal.mood,
-                "created_at": journal.created_at.isoformat()
-            } for journal in journals
-        ]
-    }
-
-    encrypted_data = encryption_utils.encrypt_data(str(export_data))
-
-    return {"encrypted_data": encrypted_data}
-
-@router.delete("/habits/{habit_id}")
-def delete_habit(habit_id: int, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
-    success = crud.delete_habit(db, user_id=current_user.id, habit_id=habit_id)
-    if not success:
-        raise HTTPException(status_code=404, detail="Habit not found")
-    return {"deleted": True}

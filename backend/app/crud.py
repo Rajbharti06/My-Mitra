@@ -68,11 +68,13 @@ def create_chat_message(
     db.refresh(db_message)
     return db_message
 
-def get_recent_chat_history(db: Session, user_id: int, limit: int = 10) -> List[dict]:
-    """Get recent chat history for context."""
-    messages = db.query(models.ChatMessage).filter(
-        models.ChatMessage.user_id == user_id
-    ).order_by(desc(models.ChatMessage.created_at)).limit(limit).all()
+
+def get_recent_chat_history(db: Session, user_id: int, limit: int = 10, session_id: Optional[str] = None) -> List[dict]:
+    """Get recent chat history for context. If session_id provided, filter to that session."""
+    query = db.query(models.ChatMessage).filter(models.ChatMessage.user_id == user_id)
+    if session_id:
+        query = query.filter(models.ChatMessage.session_id == session_id)
+    messages = query.order_by(desc(models.ChatMessage.created_at)).limit(limit).all()
     
     result = []
     for msg in reversed(messages):  # Reverse to get chronological order
@@ -87,6 +89,7 @@ def get_recent_chat_history(db: Session, user_id: int, limit: int = 10) -> List[
             continue  # Skip corrupted messages
     
     return result
+
 
 def get_chat_messages_for_export(db: Session, user_id: int) -> List[dict]:
     """Get all chat messages for data export."""
@@ -110,6 +113,46 @@ def get_chat_messages_for_export(db: Session, user_id: int) -> List[dict]:
             continue
     
     return result
+
+
+def list_chat_sessions(db: Session, user_id: int) -> List[dict]:
+    """List distinct chat sessions for a user with last activity timestamp."""
+    # SQLite does not support DISTINCT ON; use subquery approach
+    subq = db.query(models.ChatMessage.session_id, models.ChatMessage.created_at).\
+        filter(models.ChatMessage.user_id == user_id).\
+        order_by(models.ChatMessage.session_id, desc(models.ChatMessage.created_at)).subquery()
+    rows = db.query(subq.c.session_id, subq.c.created_at).all()
+    # Deduplicate keeping first occurrence (already sorted by created_at desc per session)
+    seen = set()
+    sessions = []
+    for sid, ts in rows:
+        if sid and sid not in seen:
+            seen.add(sid)
+            sessions.append({"id": sid, "last_activity": ts.isoformat() if ts else None})
+    return sessions
+
+
+def delete_chat_session(db: Session, user_id: int, session_id: str) -> int:
+    """Delete all messages in a session for the user. Returns count deleted."""
+    msgs = db.query(models.ChatMessage).filter(
+        models.ChatMessage.user_id == user_id,
+        models.ChatMessage.session_id == session_id
+    ).all()
+    count = len(msgs)
+    for m in msgs:
+        db.delete(m)
+    db.commit()
+    return count
+
+
+def delete_all_chats(db: Session, user_id: int) -> int:
+    """Delete all chat messages for a user. Returns count deleted."""
+    msgs = db.query(models.ChatMessage).filter(models.ChatMessage.user_id == user_id).all()
+    count = len(msgs)
+    for m in msgs:
+        db.delete(m)
+    db.commit()
+    return count
 
 # Habits
 
