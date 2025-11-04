@@ -2,6 +2,37 @@
 
 MyMitra is a privacy-first emotional AI companion with multiple personalities and encrypted chat storage. It runs a FastAPI backend and a React frontend, with offline LLM support via Ollama.
 
+## Highlights
+- Privacy-first design with local encryption for sensitive data
+- Multiple personalities: Mitra, Motivator, Mentor, Coach
+- Personality selection modal in chat UI (Mitra by default)
+- Fast-mode heuristic for short queries with depth metadata
+- WebSocket-powered live chat with graceful, personality-aware fallbacks
+
+## Screenshots
+
+> Place the provided images into `docs/screenshots/` to render below. Filenames used here match the five screenshots you shared.
+
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard – Good Afternoon, Friend" width="800" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/chat.png" alt="Chat with Mitra – conversation view" width="800" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/journal.png" alt="Reflection Journal – entries view" width="800" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/habits.png" alt="Daily Habits – list and progress" width="800" />
+</p>
+
+<p align="center">
+  <img src="docs/screenshots/mood-tracker.png" alt="Mood Tracker – emoji selections" width="800" />
+</p>
+
 ## Quick Start
 
 - Clone and install:
