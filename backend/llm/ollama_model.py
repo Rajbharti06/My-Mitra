@@ -344,6 +344,33 @@ Keep responses warm, genuine, and adaptive to the student's current emotional an
             else:
                 return f"I'm in {personality_name} mode but having technical issues. 🏆 Let's focus on what we can control. What's your main objective right now, and what's blocking you? The best coaches adapt to any situation - including tech failures!"
         
+        elif self.current_personality == PersonalityType.MITRA:
+            # Mitra: warm, wise, friendly companion blending support with practical guidance
+            if is_sad:
+                return (
+                    "I'm having a hiccup on my side, but I'm right here with you. 💙 "
+                    "I hear you, and your feelings matter. Let's take a gentle breath together. "
+                    "If you're up for it, tell me one small thing that's weighing on you — we can face it together."
+                )
+            elif is_stressed:
+                return (
+                    f"I'm in {personality_name} mode, but my tools are offline for a moment. 🫶 "
+                    "When stress rises, it's often your mind trying to protect something important. "
+                    "What feels most urgent right now? We can make a tiny 2-step plan to help you breathe and move forward."
+                )
+            elif is_goal_related:
+                return (
+                    f"I'm in {personality_name} mode, but experiencing some tech issues. ✨ "
+                    "You're capable — let’s sketch a simple, practical next step while things reload: "
+                    "What's one 10-minute action you can take right now toward your goal?"
+                )
+            else:
+                return (
+                    f"A quick heads-up: I'm in {personality_name} mode but having technical trouble. "
+                    "Still, I'm here to listen. What's on your mind today? "
+                    "If you'd like, I can help you pick one small, meaningful action to start with."
+                )
+
         else:  # DEFAULT
             if is_stressed or is_sad:
                 return f"I'm having some technical difficulties right now, but I'm still here for you in spirit. 💙 Your feelings are completely valid. Sometimes the most healing thing is just knowing someone cares - and I do. What's going on? Even without AI, human connection matters most."

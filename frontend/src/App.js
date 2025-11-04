@@ -21,6 +21,10 @@ import MoodTracking from './pages/MoodTracking';
 function App() {
   const [activeTab, setActiveTab] = useState('dashboard');
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [nameInput, setNameInput] = useState(() => {
+    try { return localStorage.getItem('username') || ''; } catch { return ''; }
+  });
+  const [nameSavedNotice, setNameSavedNotice] = useState('');
 
   const renderContent = () => {
     const contentVariants = {
@@ -127,10 +131,45 @@ function App() {
               <h1 className="text-3xl font-bold text-warm-brown dark:text-dark-accent mb-6">
                 Settings
               </h1>
-              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-soft">
-                <p className="text-gray-600 dark:text-gray-300">
-                  Settings panel coming soon...
-                </p>
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-soft space-y-4">
+                <div>
+                  <h2 className="text-lg font-semibold text-warm-brown dark:text-dark-accent mb-2">Display Name</h2>
+                  <p className="text-sm text-gray-600 dark:text-gray-300 mb-3">Set the name Mitra should use when greeting you.</p>
+                  <div className="flex gap-2 items-center">
+                    <input
+                      type="text"
+                      value={nameInput}
+                      onChange={(e) => setNameInput(e.target.value)}
+                      placeholder="Enter your name"
+                      className="flex-1 bg-white dark:bg-gray-900 border border-gray-300 dark:border-gray-700 rounded-xl px-3 py-2 text-sm text-gray-800 dark:text-gray-200"
+                    />
+                    <button
+                      onClick={() => {
+                        const cleaned = (nameInput || '').trim();
+                        try { localStorage.setItem('username', cleaned); } catch {}
+                        setNameSavedNotice('Name saved');
+                        setTimeout(() => setNameSavedNotice(''), 2000);
+                      }}
+                      className="bg-warm-brown text-white rounded-xl px-4 py-2 text-sm font-semibold hover:opacity-90"
+                    >
+                      Save
+                    </button>
+                    <button
+                      onClick={() => {
+                        try { localStorage.removeItem('username'); } catch {}
+                        setNameInput('');
+                        setNameSavedNotice('Name cleared');
+                        setTimeout(() => setNameSavedNotice(''), 2000);
+                      }}
+                      className="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl px-4 py-2 text-sm hover:opacity-90"
+                    >
+                      Clear
+                    </button>
+                  </div>
+                  {nameSavedNotice && (
+                    <p className="text-xs text-green-600 dark:text-green-400 mt-2">{nameSavedNotice}</p>
+                  )}
+                </div>
               </div>
             </div>
           </motion.div>

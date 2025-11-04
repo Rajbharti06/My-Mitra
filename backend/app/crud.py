@@ -81,9 +81,11 @@ def get_recent_chat_history(db: Session, user_id: int, limit: int = 10, session_
         try:
             user_message = encryption_utils.decrypt_data(msg.message_encrypted.decode('utf-8'))
             ai_response = encryption_utils.decrypt_data(msg.response_encrypted.decode('utf-8'))
+            ts = msg.created_at.isoformat() if getattr(msg, 'created_at', None) else None
+            sid = msg.session_id
             result.extend([
-                {"role": "user", "content": user_message},
-                {"role": "assistant", "content": ai_response}
+                {"role": "user", "content": user_message, "timestamp": ts, "session_id": sid},
+                {"role": "assistant", "content": ai_response, "timestamp": ts, "session_id": sid}
             ])
         except Exception:
             continue  # Skip corrupted messages
@@ -166,7 +168,28 @@ def create_habit(db: Session, user_id: int, habit: schemas.HabitCreate):
     db.add(db_obj)
     db.commit()
     db.refresh(db_obj)
-    return db_obj
+    
+    # Return formatted response like list_habits
+    try:
+        title = encryption_utils.decrypt_data(db_obj.title_encrypted.decode('utf-8'))
+    except Exception:
+        title = "[decryption_failed]"
+    try:
+        description = encryption_utils.decrypt_data(db_obj.description_encrypted.decode('utf-8')) if db_obj.description_encrypted else None
+    except Exception:
+        description = "[decryption_failed]"
+    
+    return {
+        "id": db_obj.id,
+        "user_id": db_obj.user_id,
+        "title": title,
+        "description": description,
+        "frequency": db_obj.frequency,
+        "streak_count": db_obj.streak_count,
+        "last_completed": db_obj.last_completed.isoformat() if db_obj.last_completed else None,
+        "created_at": db_obj.created_at.isoformat() if db_obj.created_at else None,
+        "archived": db_obj.archived if hasattr(db_obj, 'archived') else False
+    }
 
 
 def list_habits(db: Session, user_id: int):
@@ -182,11 +205,32 @@ def list_habits(db: Session, user_id: int):
         except Exception:
             description = "[decryption_failed]"
 
-        # Calculate current streak for each habit
+        # Validate current streak based on frequency
         if habit.last_completed:
-            days_since = (datetime.now() - habit.last_completed).days
-            if days_since > 1:  # Streak broken
+            now = datetime.now()
+            frequency = habit.frequency or 'daily'
+            streak_broken = False
+            
+            if frequency == 'daily':
+                days_since = (now - habit.last_completed).days
+                if days_since > 1:  # More than 1 day gap breaks daily streak
+                    streak_broken = True
+            elif frequency == 'weekly':
+                weeks_since = (now - habit.last_completed).days // 7
+                if weeks_since > 1:  # More than 1 week gap breaks weekly streak
+                    streak_broken = True
+            elif frequency == 'monthly':
+                months_since = (now.year - habit.last_completed.year) * 12 + (now.month - habit.last_completed.month)
+                if months_since > 1:  # More than 1 month gap breaks monthly streak
+                    streak_broken = True
+            else:  # custom or unknown frequency, treat as daily
+                days_since = (now - habit.last_completed).days
+                if days_since > 1:
+                    streak_broken = True
+            
+            if streak_broken:
                 habit.streak_count = 0
+                db.commit()  # Update the database with corrected streak
         
         result.append({
             "id": habit.id,
@@ -196,13 +240,14 @@ def list_habits(db: Session, user_id: int):
             "frequency": habit.frequency,
             "streak_count": habit.streak_count,
             "last_completed": habit.last_completed.isoformat() if habit.last_completed else None,
-            "created_at": habit.created_at.isoformat() if habit.created_at else None
+            "created_at": habit.created_at.isoformat() if habit.created_at else None,
+            "archived": habit.archived if hasattr(habit, 'archived') else False
         })
     return result
 
 
 def complete_habit(db: Session, user_id: int, habit_id: int):
-    """Mark a habit as completed for today and update streak."""
+    """Mark a habit as completed and update streak based on frequency."""
     habit = db.query(models.Habit).filter(
         models.Habit.id == habit_id,
         models.Habit.user_id == user_id
@@ -212,29 +257,58 @@ def complete_habit(db: Session, user_id: int, habit_id: int):
         return None
     
     now = datetime.now()
+    frequency = habit.frequency or 'daily'
     
-    # Check if already completed today
-    if habit.last_completed and habit.last_completed.date() == now.date():
-        return {"message": "Habit already completed today", "streak": habit.streak_count}
-    
-    # Update streak logic
+    # Check if already completed in the current period
     if habit.last_completed:
-        days_since = (now - habit.last_completed).days
-        if days_since == 1:  # Consecutive day
-            habit.streak_count += 1
-        elif days_since > 1:  # Streak broken, restart
-            habit.streak_count = 1
+        if frequency == 'daily' and habit.last_completed.date() == now.date():
+            return habit  # Already completed today
+        elif frequency == 'weekly':
+            # Check if completed in the same week
+            last_week = habit.last_completed.isocalendar()[1]
+            current_week = now.isocalendar()[1]
+            if last_week == current_week and habit.last_completed.year == now.year:
+                return habit  # Already completed this week
+        elif frequency == 'monthly':
+            # Check if completed in the same month
+            if (habit.last_completed.month == now.month and 
+                habit.last_completed.year == now.year):
+                return habit  # Already completed this month
+    
+    # Calculate streak based on frequency
+    if habit.last_completed:
+        if frequency == 'daily':
+            days_since = (now - habit.last_completed).days
+            if days_since == 1:  # Consecutive day
+                habit.streak_count += 1
+            elif days_since > 1:  # Streak broken, restart
+                habit.streak_count = 1
+        elif frequency == 'weekly':
+            weeks_since = (now - habit.last_completed).days // 7
+            if weeks_since == 1:  # Consecutive week
+                habit.streak_count += 1
+            elif weeks_since > 1:  # Streak broken, restart
+                habit.streak_count = 1
+        elif frequency == 'monthly':
+            # Calculate months between dates
+            months_since = (now.year - habit.last_completed.year) * 12 + (now.month - habit.last_completed.month)
+            if months_since == 1:  # Consecutive month
+                habit.streak_count += 1
+            elif months_since > 1:  # Streak broken, restart
+                habit.streak_count = 1
+        else:  # custom or unknown frequency, treat as daily
+            days_since = (now - habit.last_completed).days
+            if days_since <= 1:  # Within a day
+                habit.streak_count += 1
+            else:  # Streak broken, restart
+                habit.streak_count = 1
     else:
         habit.streak_count = 1  # First completion
     
     habit.last_completed = now
     db.commit()
     
-    return {
-        "message": "Habit completed successfully!",
-        "streak": habit.streak_count,
-        "last_completed": habit.last_completed.isoformat()
-    }
+    return habit
 
 
 def get_habit_insights(db: Session, user_id: int):
@@ -340,11 +414,34 @@ def update_habit(db: Session, user_id: int, habit_id: int, habit_update: schemas
     if habit_update.is_active is not None:
         habit.is_active = habit_update.is_active
     
+    if habit_update.archived is not None:
+        habit.archived = habit_update.archived
+    
     habit.updated_at = datetime.now()
     db.commit()
     db.refresh(habit)
     
-    return habit
+    # Return formatted response matching schemas.Habit (decrypt + ISO dates)
+    try:
+        title = encryption_utils.decrypt_data(habit.title_encrypted.decode('utf-8'))
+    except Exception:
+        title = "[decryption_failed]"
+    try:
+        description = encryption_utils.decrypt_data(habit.description_encrypted.decode('utf-8')) if habit.description_encrypted else None
+    except Exception:
+        description = "[decryption_failed]"
+
+    return {
+        "id": habit.id,
+        "user_id": habit.user_id,
+        "title": title,
+        "description": description,
+        "frequency": habit.frequency,
+        "streak_count": habit.streak_count,
+        "last_completed": habit.last_completed.isoformat() if habit.last_completed else None,
+        "created_at": habit.created_at.isoformat() if habit.created_at else None,
+        "archived": habit.archived if hasattr(habit, 'archived') else False
+    }
 
 
 def delete_habit(db: Session, user_id: int, habit_id: int):

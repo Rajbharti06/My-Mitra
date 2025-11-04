@@ -17,14 +17,20 @@ root.render(
 reportWebVitals();
 
 // Register service worker for offline caching and notifications
-if ('serviceWorker' in navigator) {
+// Completely disable service worker for now to prevent registration errors
+// We'll re-enable it once the core functionality is stable
+/*
+if ('serviceWorker' in navigator && window.isSecureContext) {
   window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/service-worker.js')
-      .then((registration) => {
-        console.log('Service Worker registered:', registration);
-      })
-      .catch((error) => {
-        console.error('Service Worker registration failed:', error);
-      });
+    setTimeout(() => {
+      navigator.serviceWorker.register('/service-worker.js')
+        .then((registration) => {
+          console.log('Service Worker registered:', registration);
+        })
+        .catch((error) => {
+          console.error('Service Worker registration failed:', error);
+        });
+    }, 1000);
   });
 }
+*/

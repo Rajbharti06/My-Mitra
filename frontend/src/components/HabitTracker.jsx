@@ -68,14 +68,17 @@ const HabitTracker = ({ habits = defaultHabits, compact = false }) => {
       return;
     }
     setError('');
-    try {
-      await api.createHabit(newTitle.trim(), newFrequency, newDescription || null);
+      setLoading(true);
+      try {
+        await api.createHabit(newTitle.trim(), newFrequency, newDescription || null);
       setNewTitle('');
       setNewFrequency('daily');
       setNewDescription('');
       await fetchHabits();
     } catch (e) {
       setError(e.message || 'Could not create habit');
+    } finally {
+      setLoading(false);
     }
   };
 

@@ -93,11 +93,13 @@ class Habit(BaseModel):
     streak_count: Optional[int] = 0
     last_completed: Optional[str] = None
     created_at: Optional[str] = None
+    archived: Optional[bool] = False
 
     model_config = ConfigDict(from_attributes=True)
 
 class HabitUpdate(BaseModel):
     title: Optional[str] = None
+    archived: Optional[bool] = None
     description: Optional[str] = None
     frequency: Optional[str] = None
     is_active: Optional[bool] = None

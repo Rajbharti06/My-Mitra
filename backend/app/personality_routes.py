@@ -76,7 +76,8 @@ async def get_current_personality(
 @router.post("/switch/{personality_type}")
 async def switch_personality(
     personality_type: str,
-    current_user: User = Depends(get_current_user_optional)
+    current_user: User = Depends(get_current_user_optional),
+    db: Session = Depends(get_db)
 ):
     """
     Switch to a different AI personality.
@@ -93,8 +94,16 @@ async def switch_personality(
                 detail=f"Invalid personality type. Available: {available_types}"
             )
         
-        # Switch personality
+        # Switch personality for current runtime
         ollama_model.set_personality(personality_enum)
+
+        # Persist user preference if authenticated
+        if current_user:
+            try:
+                from . import crud
+                crud.update_user_personality(db, current_user.id, personality_enum.value)
+            except Exception as e:
+                logger.warning(f"Failed to persist personality for user {current_user.id}: {e}")
         
         # Get updated personality info
         personality_info = ollama_model.get_current_personality_info()
@@ -107,7 +116,8 @@ async def switch_personality(
             "message": f"Successfully switched to {personality_info['name']}",
             "personality": personality_info,
             "switched_at": "now",
-            "user_id": user_id
+            "user_id": user_id,
+            "persisted": bool(current_user)
         }
         
     except HTTPException:

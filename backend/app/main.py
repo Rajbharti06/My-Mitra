@@ -84,6 +84,10 @@ app.include_router(admin_router, prefix="/api/v1")
 # Include emotion analysis routes
 app.include_router(emotions_router, prefix="/api/v1")
 
+# Include WebSocket routes
+from .websocket_routes import router as websocket_router
+app.include_router(websocket_router)
+
 # Root endpoint
 @app.get("/")
 def root():

@@ -21,6 +21,7 @@ router = APIRouter()
 
 # Security dependencies
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token")
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="token", auto_error=False)
 
 def get_db():
     db = SessionLocal()
@@ -29,7 +30,7 @@ def get_db():
     finally:
         db.close()
 
-async def get_current_user_optional(token: str = Depends(oauth2_scheme), db=Depends(get_db)):
+async def get_current_user_optional(token: str = Depends(oauth2_scheme_optional), db=Depends(get_db)):
     if not token:
         return None
     try:
@@ -42,6 +43,10 @@ async def get_current_user_required(token: str = Depends(oauth2_scheme), db=Depe
     user = security.get_current_user(token, db)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Not authenticated")
+    # Convert dict to object if needed
+    if isinstance(user, dict):
+        from types import SimpleNamespace
+        user = SimpleNamespace(**user)
     return user
 
 @router.post("/register", response_model=schemas.User)
@@ -59,42 +64,126 @@ async def chat_with_mymitra(
 ):
     """
     Chat with My Mitra AI with personality support.
-    Supports both authenticated and anonymous users.
+    Supports both authenticated and anonymous users with real-time WebSocket notifications.
     """
-    # Generate session ID if not provided
-    session_id = message.session_id or str(uuid.uuid4())
-    
-    # Get AI response using enhanced pipeline
-    result = enhanced_chat_pipeline.get_mitra_reply(
-        user_input=message.message,
-        user_id=current_user.id if current_user else None,
-        db=db if current_user else None,
-        personality=message.personality,
-        session_id=session_id
-    )
-    
-    # Analyze emotion if user is authenticated
-    if current_user:
+    try:
+        # Generate session ID if not provided
+        session_id = message.session_id or str(uuid.uuid4())
+        
+        # Validate message content
+        if not message.message or not message.message.strip():
+            raise HTTPException(status_code=422, detail="Message content cannot be empty")
+        
+        # Send typing indicator via WebSocket if user is authenticated
+        if current_user:
+            from .websocket_manager import manager
+            await manager.send_typing_indicator(session_id, current_user.id, True)
+        
+        # Get AI response using enhanced pipeline
+        result = enhanced_chat_pipeline.get_mitra_reply(
+            user_input=message.message,
+            user_id=current_user.id if current_user else None,
+            db=db if current_user else None,
+            personality=message.personality,
+            session_id=session_id
+        )
+        
+        # Send message via WebSocket for real-time delivery
+        if current_user:
+            from .websocket_manager import manager
+            await manager.send_typing_indicator(session_id, current_user.id, False)
+            await manager.send_chat_message(session_id, {
+                "type": "message",
+                "message": result.get("response", ""),
+                "personality": message.personality,
+                "timestamp": result.get("timestamp"),
+                "session_id": session_id
+            })
+        
+        # Analyze emotion if user is authenticated
+        if current_user:
+            try:
+                from core.emotion_engine import analyze_emotion
+                emotion_result = analyze_emotion(message.message)
+                
+                # Store emotion record
+                emotion_record = models.EmotionRecord(
+                    user_id=current_user.id,
+                    primary_emotion=emotion_result.category.value,
+                    primary_intensity=emotion_result.intensity.value,
+                    confidence=emotion_result.confidence,
+                    sentiment_polarity=emotion_result.sentiment_scores.get("polarity", 0),
+                    sentiment_subjectivity=emotion_result.sentiment_scores.get("subjectivity", 0),
+                    text_snapshot=encryption_utils.encrypt_data(message.message).encode('utf-8')
+                )
+                db.add(emotion_record)
+                db.commit()
+            except Exception as e:
+                logger.error(f"Emotion analysis failed: {e}")
+                # Don't fail the entire request if emotion analysis fails
+        
+        # Add delivery status
+        result["delivery_status"] = "delivered"
+        result["session_id"] = session_id
+        
+        return result
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Chat error: {str(e)}")
+        # Graceful fallback: return an empathetic message and keep conversation flowing
         try:
-            from core.emotion_engine import analyze_emotion
-            emotion_result = analyze_emotion(message.message)
-            
-            # Store emotion record
-            emotion_record = models.EmotionRecord(
-                user_id=current_user.id,
-                primary_emotion=emotion_result.category.value,
-                primary_intensity=emotion_result.intensity.value,
-                confidence=emotion_result.confidence,
-                sentiment_polarity=emotion_result.sentiment_scores.get("polarity", 0),
-                sentiment_subjectivity=emotion_result.sentiment_scores.get("subjectivity", 0),
-                text_snapshot=encryption_utils.encrypt_data(message.message).encode('utf-8')
+            # Determine personality for fallback
+            personality_used = enhanced_chat_pipeline._determine_personality(
+                current_user.id if current_user else None,
+                message.personality,
+                db if current_user else None
             )
-            db.add(emotion_record)
-            db.commit()
-        except Exception as e:
-            logger.error(f"Emotion analysis failed: {e}")
-    
-    return result
+
+            # Build a warm, personality-aware fallback using local generator
+            fallback_text = "I'm having a bit of trouble processing that, but I'm here with you. What's on your mind right now?"
+            try:
+                # Prefer model's offline fallback which adapts to current personality
+                fallback_text = enhanced_chat_pipeline.model._generate_fallback_response(message.message)
+            except Exception:
+                pass
+
+            result = {
+                "response": fallback_text,
+                "personality_used": personality_used,
+                "session_id": message.session_id or str(uuid.uuid4()),
+                "memory_used": False,
+                "personality_info": {"type": personality_used},
+                "delivery_status": "degraded"
+            }
+
+            # Send via WebSocket if possible to keep UX responsive
+            if current_user:
+                try:
+                    from .websocket_manager import manager
+                    await manager.send_typing_indicator(result["session_id"], current_user.id, False)
+                    await manager.send_chat_message(result["session_id"], {
+                        "type": "message",
+                        "message": result.get("response", ""),
+                        "personality": personality_used,
+                        "timestamp": result.get("timestamp"),
+                        "session_id": result["session_id"]
+                    })
+                except Exception:
+                    pass
+
+            return result
+        except Exception:
+            # As a last resort, preserve API contract and surface a controlled error
+            if current_user:
+                try:
+                    from .websocket_manager import manager
+                    await manager.send_typing_indicator(session_id, current_user.id, False)
+                    await manager.send_message_status(session_id, "error", str(e))
+                except Exception:
+                    pass
+            raise HTTPException(status_code=500, detail="Failed to process message")
 
 @router.get("/chat/personalities", response_model=List[schemas.PersonalityInfo])
 async def get_available_personalities():
@@ -183,8 +272,36 @@ async def list_journal_entries(db: "Session" = Depends(get_db), current_user=Dep
     return crud.list_journals(db, user_id=current_user.id)
 
 @router.post("/habits", response_model=schemas.Habit)
-def create_habit(habit: "schemas.HabitCreate", db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+async def create_habit(habit: "schemas.HabitCreate", db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+    # Basic validation
+    title = (habit.title or "").strip()
+    if not title:
+        raise HTTPException(status_code=422, detail="Title is required")
+    allowed_freq = {"daily", "weekly", "monthly", "custom"}
+    if habit.frequency and habit.frequency not in allowed_freq:
+        raise HTTPException(status_code=422, detail="Invalid frequency. Use daily, weekly, monthly, or custom")
+
     obj = crud.create_habit(db, user_id=current_user.id, habit=habit)
+    
+    # Send WebSocket notification for real-time updates
+    try:
+        from .websocket_manager import manager
+        await manager.broadcast_habit_update({
+            "type": "habit_created",
+            "habit": {
+                "id": obj.id,
+                "title": obj.title,
+                "description": obj.description,
+                "frequency": obj.frequency,
+                "streak_count": obj.streak_count,
+                "is_active": obj.is_active,
+                "created_at": obj.created_at.isoformat() if obj.created_at else None
+            },
+            "user_id": current_user.id
+        })
+    except Exception as e:
+        logger.warning(f"Failed to send WebSocket notification for habit creation: {e}")
+    
     # Log in long-term memory if available
     try:
         if enhanced_chat_pipeline.long_term_memory:
@@ -201,18 +318,116 @@ def list_habits(db: "Session" = Depends(get_db), current_user=Depends(get_curren
     return crud.list_habits(db, user_id=current_user.id)
 
 @router.post("/habits/{habit_id}/complete")
-def complete_habit(habit_id: int, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+async def complete_habit(habit_id: int, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
     result = crud.complete_habit(db, user_id=current_user.id, habit_id=habit_id)
     if result is None:
         raise HTTPException(status_code=404, detail="Habit not found")
-    return result
+    
+    # Send WebSocket notification for real-time updates
+    try:
+        from .websocket_manager import manager
+        # Decrypt title for WebSocket notification
+        try:
+            decrypted_title = encryption_utils.decrypt_data(result.title_encrypted.decode('utf-8'))
+        except Exception:
+            decrypted_title = "[decryption_failed]"
+            
+        await manager.broadcast_habit_update({
+            "type": "habit_completed",
+            "habit": {
+                "id": result.id,
+                "title": decrypted_title,
+                "streak_count": result.streak_count,
+                "last_completed": result.last_completed.isoformat() if result.last_completed else None
+            },
+            "user_id": current_user.id
+        })
+    except Exception as e:
+        logger.warning(f"Failed to send WebSocket notification for habit completion: {e}")
+    
+    return {
+        "message": "Habit completed successfully!",
+        "streak": result.streak_count,
+        "last_completed": result.last_completed.isoformat() if result.last_completed else None,
+        "habit_id": result.id
+    }
 
 @router.put("/habits/{habit_id}", response_model=schemas.Habit)
-def update_habit(habit_id: int, habit_update: schemas.HabitUpdate, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+async def update_habit(habit_id: int, habit_update: schemas.HabitUpdate, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+    # Validation
+    if habit_update.title is not None and not (habit_update.title or "").strip():
+        raise HTTPException(status_code=422, detail="Title cannot be empty")
+    allowed_freq = {"daily", "weekly", "monthly", "custom"}
+    if habit_update.frequency and habit_update.frequency not in allowed_freq:
+        raise HTTPException(status_code=422, detail="Invalid frequency. Use daily, weekly, monthly, or custom")
     updated = crud.update_habit(db, user_id=current_user.id, habit_id=habit_id, habit_update=habit_update)
     if not updated:
         raise HTTPException(status_code=404, detail="Habit not found")
+    
+    # Send WebSocket notification for real-time updates
+    try:
+        from .websocket_manager import manager
+        await manager.broadcast_habit_update({
+            "type": "habit_updated",
+            "habit": {
+                "id": updated.id,
+                "title": updated.title,
+                "description": updated.description,
+                "frequency": updated.frequency,
+                "streak_count": updated.streak_count,
+                "is_active": updated.is_active,
+                "archived": updated.archived,
+                "updated_at": updated.updated_at.isoformat() if updated.updated_at else None
+            },
+            "user_id": current_user.id
+        })
+    except Exception as e:
+        logger.warning(f"Failed to send WebSocket notification for habit update: {e}")
+    
     return updated
+
+@router.put("/habits/{habit_id}/archive", response_model=schemas.Habit)
+async def archive_habit(habit_id: int, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+    habit_update = schemas.HabitUpdate(archived=True)
+    updated = crud.update_habit(db, user_id=current_user.id, habit_id=habit_id, habit_update=habit_update)
+    if not updated:
+        raise HTTPException(status_code=404, detail="Habit not found")
+    
+    # Send WebSocket notification for real-time updates
+    try:
+        from .websocket_manager import manager
+        await manager.broadcast_habit_update({
+            "type": "habit_archived",
+            "habit": {
+                "id": updated.id,
+                "title": updated.title,
+                "archived": updated.archived
+            },
+            "user_id": current_user.id
+        })
+    except Exception as e:
+        logger.warning(f"Failed to send WebSocket notification for habit archival: {e}")
+    
+    return updated
+
+@router.delete("/habits/{habit_id}")
+async def delete_habit(habit_id: int, db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
+    ok = crud.delete_habit(db, user_id=current_user.id, habit_id=habit_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Habit not found")
+    
+    # Send WebSocket notification for real-time updates
+    try:
+        from .websocket_manager import manager
+        await manager.broadcast_habit_update({
+            "type": "habit_deleted",
+            "habit_id": habit_id,
+            "user_id": current_user.id
+        })
+    except Exception as e:
+        logger.warning(f"Failed to send WebSocket notification for habit deletion: {e}")
+    
+    return {"deleted": True}
 
 @router.post("/journals", response_model=schemas.Journal)
 def create_journal(journal: "schemas.JournalCreate", db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):

@@ -63,14 +63,42 @@ class EnhancedChatPipeline:
             ai_text = cached
             memory_used = False
         else:
-            # Generate response via model
-            ai_text = self.model.generate_response(user_input, personality_type, context_messages)
-            memory_used = bool(context_messages)
+            # Ensure model personality matches selection
+            try:
+                self.model.set_personality(personality_type)
+            except Exception:
+                pass
 
-        # Persist conversation if authenticated
+            # Build long-term memory context if available
+            long_term_context: List[str] = []
+            try:
+                if user_id and self.long_term_memory:
+                    long_term_context = self._get_memory_context(user_input, user_id)
+            except Exception:
+                long_term_context = []
+
+            # Estimate conversation depth and choose fast mode accordingly
+            depth_level = self._estimate_conversation_depth(user_input, context_messages)
+            use_fast_mode = depth_level <= 2 and len(user_input) < 160
+
+            # Generate response via model with conversation and memory context
+            ai_text = self.model.generate_response(
+                user_input,
+                conversation_history=context_messages,
+                long_term_memory_context=long_term_context,
+                fast_mode=use_fast_mode
+            )
+            memory_used = bool(context_messages or long_term_context)
+
+        # Persist conversation if authenticated and capture timestamp
+        created_at_iso: Optional[str] = None
         try:
             if user_id and db:
-                self._store_conversation(db, user_id, user_input, ai_text, personality_used, session_id)
+                stored = self._store_conversation(db, user_id, user_input, ai_text, personality_used, session_id)
+                try:
+                    created_at_iso = stored.created_at.isoformat() if getattr(stored, 'created_at', None) else None
+                except Exception:
+                    created_at_iso = None
         except Exception as e:
             logger.error(f"Conversation store failed: {e}")
 
@@ -79,7 +107,10 @@ class EnhancedChatPipeline:
             "personality_used": personality_used,
             "session_id": session_id or str(uuid.uuid4()),
             "memory_used": memory_used,
-            "personality_info": {"type": personality_used}
+            "personality_info": {"type": personality_used},
+            "created_at": created_at_iso,
+            "depth_level": depth_level if 'depth_level' in locals() else None,
+            "mode": "fast" if ('use_fast_mode' in locals() and use_fast_mode) else "deliberate"
         }
 
     def switch_personality(
@@ -165,13 +196,13 @@ class EnhancedChatPipeline:
         personality_used: str,
         session_id: Optional[str]
     ):
-        """Store the conversation in encrypted format."""
+        """Store the conversation in encrypted format and return the DB message."""
         try:
             # Generate session ID if not provided
             if not session_id:
                 session_id = str(uuid.uuid4())
             
-            crud.create_chat_message(
+            db_msg = crud.create_chat_message(
                 db=db,
                 user_id=user_id,
                 message=user_message,
@@ -179,8 +210,10 @@ class EnhancedChatPipeline:
                 personality_used=personality_used,
                 session_id=session_id
             )
+            return db_msg
         except Exception as e:
             logger.error(f"Error storing conversation: {e}")
+            return None
     
     def _update_memory(self, user_id: int, user_input: str, ai_response: str):
         """Update long-term memory with the conversation."""
@@ -207,6 +240,41 @@ class EnhancedChatPipeline:
         # Collapse multiple spaces
         cleaned = re.sub(r"\s+", " ", cleaned).strip()
         return cleaned
+
+    def _estimate_conversation_depth(self, user_input: str, recent_messages: List[Dict[str, str]]) -> int:
+        """Heuristic to estimate conversation depth level (1-5) for adaptive latency."""
+        try:
+            length_score = 1 if len(user_input) < 100 else 2 if len(user_input) < 220 else 3
+            question_marks = user_input.count('?')
+            question_score = 1 if question_marks <= 1 else 2 if question_marks <= 3 else 3
+            reflective_keywords = [
+                "meaning", "purpose", "feel", "feeling", "why", "anxious", "afraid", "love", "grief",
+                "values", "motivation", "relationship", "career", "identity", "conflict", "regret"
+            ]
+            keyword_hits = sum(1 for k in reflective_keywords if k in user_input.lower())
+            keyword_score = 1 if keyword_hits == 0 else 2 if keyword_hits <= 2 else 3
+
+            continuity_score = 1
+            try:
+                if recent_messages:
+                    last = " ".join([str(m.get("content", ""))[:200] for m in recent_messages[-2:]])
+                    overlap = sum(1 for k in reflective_keywords if k in last.lower())
+                    continuity_score = 1 if overlap == 0 else 2
+            except Exception:
+                pass
+
+            raw = length_score + question_score + keyword_score + continuity_score
+            if raw <= 5:
+                return 1
+            if raw <= 7:
+                return 2
+            if raw <= 9:
+                return 3
+            if raw <= 11:
+                return 4
+            return 5
+        except Exception:
+            return 2
 
 # Global instance for use in routes
 enhanced_chat_pipeline = EnhancedChatPipeline()
