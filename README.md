@@ -11,27 +11,33 @@ MyMitra is a privacy-first emotional AI companion with multiple personalities an
 
 ## Screenshots
 
-> Place the provided images into `docs/screenshots/` to render below. Filenames used here match the five screenshots you shared.
+See more and contribution guidelines in `docs/screenshots/README.md`.
 
-<p align="center">
-  <img src="docs/screenshots/dashboard.png" alt="Dashboard – Good Afternoon, Friend" width="800" />
-</p>
+### Dashboard
 
-<p align="center">
-  <img src="docs/screenshots/chat.png" alt="Chat with Mitra – conversation view" width="800" />
-</p>
+![Dashboard overview (1)](./docs/screenshots/Dashboard1.png)
+![Dashboard overview (2)](./docs/screenshots/Dashboard2.png)
 
-<p align="center">
-  <img src="docs/screenshots/journal.png" alt="Reflection Journal – entries view" width="800" />
-</p>
+### Chat
 
-<p align="center">
-  <img src="docs/screenshots/habits.png" alt="Daily Habits – list and progress" width="800" />
-</p>
+![Chat conversation](./docs/screenshots/Chat.png)
 
-<p align="center">
-  <img src="docs/screenshots/mood-tracker.png" alt="Mood Tracker – emoji selections" width="800" />
-</p>
+### Journal
+
+![Journal entries](./docs/screenshots/Journal.png)
+
+### Habits
+
+![Habits tracker](./docs/screenshots/Habits.png)
+
+### Mood Tracking
+
+![Mood tracker (1)](./docs/screenshots/MoodTracker1.png)
+![Mood tracker (2)](./docs/screenshots/MoodTracker2.png)
+
+### Progress & Insights
+
+![Progress insights](./docs/screenshots/Progress.png)
 
 ## Quick Start
 
