@@ -1,161 +1,260 @@
-# MyMitra
+# 🌱 MyMitra — Your AI Mentor, Friend & Guide
 
-MyMitra is a privacy-first emotional AI companion with multiple personalities and encrypted chat storage. It runs a FastAPI backend and a React frontend, with offline LLM support via Ollama.
+> **An old-soul companion for a modern world.**
+> Built with privacy at the core, MyMitra is an emotional AI mentor that listens deeply, speaks gently, and helps you grow — one honest conversation at a time.
 
-## Highlights
-- Privacy-first design with local encryption for sensitive data
-- Multiple personalities: Mitra, Motivator, Mentor, Coach
-- Personality selection modal in chat UI (Mitra by default)
-- Fast-mode heuristic for short queries with depth metadata
-- WebSocket-powered live chat with graceful, personality-aware fallbacks
+---
 
-## Screenshots
+## 🧭 What is MyMitra?
 
-See more and contribution guidelines in `docs/screenshots/README.md`.
+**MyMitra** is a **privacy-first emotional AI companion** designed to feel less like software and more like a trusted friend.
 
-### Dashboard
+It doesn’t chase hype. It respects silence. It remembers *only what you allow*. And it runs **locally**, so your thoughts stay yours.
 
-![Dashboard overview (1)](./docs/screenshots/Dashboard1.png)
-![Dashboard overview (2)](./docs/screenshots/Dashboard2.png)
+Think of MyMitra as:
 
-### Chat
+* 🤝 a **friend** when you feel alone
+* 🧠 a **mentor** when you feel lost
+* 🔥 a **motivator** when you feel tired
+* 🎯 a **coach** when you want discipline
 
-![Chat conversation](./docs/screenshots/Chat.png)
+All wrapped into one calm, focused system.
 
-### Journal
+---
 
-![Journal entries](./docs/screenshots/Journal.png)
+## ✨ Core Philosophy (Why MyMitra Exists)
 
-### Habits
+* **Privacy is non‑negotiable** — no cloud by default, encrypted storage only
+* **Emotion before intelligence** — EQ > IQ
+* **Local-first, offline-capable AI** — power without dependency
+* **Human-like personalities** — warm, fallible, grounding
+* **Slow tech** — fewer features, deeper impact
 
-![Habits tracker](./docs/screenshots/Habits.png)
+This is not another chatbot.
+This is an **AI companion built to stay**.
 
-### Mood Tracking
+---
 
-![Mood tracker (1)](./docs/screenshots/MoodTracker1.png)
-![Mood tracker (2)](./docs/screenshots/MoodTracker2.png)
+## 🚀 Highlights
 
-### Progress & Insights
+* 🔐 **Privacy-first architecture** with local encryption
+* 🧬 **Multiple AI personalities**:
 
-![Progress insights](./docs/screenshots/Progress.png)
+  * **Mitra** — calm, empathetic companion *(default)*
+  * **Motivator** — energetic, uplifting push
+  * **Mentor** — thoughtful, long-term guidance
+  * **Coach** — structured, no‑nonsense accountability
+* 🎭 **Personality selector** inside chat UI
+* ⚡ **Fast Mode** for short, practical questions
+* 🔄 **WebSocket-powered real-time chat**
+* 🧠 **Offline LLM support** via Ollama
+* 📓 **Journal, Habits, Mood & Progress tracking**
 
-## Quick Start
+---
 
-- Clone and install:
-  - `git clone https://github.com/Rajbharti06/My-Mitra`
-  - Backend: `python -m venv .venv && .venv\\Scripts\\activate && pip install -r backend/requirements.txt`
-  - Frontend: `cd frontend && npm install`
-- Run services:
-  - Backend: `uvicorn backend.app.main:app --reload --port 8000`
-  - Frontend: `npm start` (served at `http://localhost:3000`)
+## 📸 Screenshots
 
-## LLM Requirements
+See all screenshots and UI previews in:
 
-- Default LLM: `mistral:7b` via Ollama (configurable with `MYMITRA_OLLAMA_MODEL`).
-- Ollama version: 0.3.12 or newer is recommended.
-- Alternative models tested: `llama3:8b`, `gemma:7b`, `qwen2:7b` (choose based on hardware).
+```
+docs/screenshots/README.md
+```
 
-### Official Downloads
+Included sections:
 
-- Ollama (Windows/macOS/Linux): https://ollama.com/
-- Models: `ollama pull mistral:7b` (or your preferred model)
-- Python: https://www.python.org/downloads/
-- Node.js (LTS 18+): https://nodejs.org/
-- Git: https://git-scm.com/downloads
+* Dashboard
+* Chat Interface
+* Journal
+* Habits
+* Mood Tracking
+* Progress & Insights
 
-## Installation Guide
+---
 
-1. Install prerequisites (Windows):
-   - Python 3.10+
-   - Node.js 18+
-   - Git
-   - Ollama (ensure service is running)
-2. Clone repository:
-   - `git clone https://github.com/Rajbharti06/My-Mitra && cd MyMitra`
-3. Backend setup:
-   - `python -m venv .venv`
-   - `.venv\\Scripts\\activate`
-   - `pip install -r backend/requirements.txt`
-   - Create `backend/.env` and set:
-     - `ENCRYPTION_KEY` to a 32-character string (required)
-     - `OLLAMA_BASE_URL` (default `http://localhost:11434`)
-     - `MYMITRA_OLLAMA_MODEL` (optional, overrides default model)
-4. Frontend setup:
-   - `cd frontend && npm install`
-5. Pull an LLM into Ollama:
-   - `ollama pull mistral:7b`
-6. Run services:
-   - Backend: `uvicorn backend.app.main:app --reload --port 8000`
-   - Frontend: `npm start`
+## 📥 Downloads & Requirements
 
-## System Requirements
+### Required Software
 
-- Minimum hardware:
-  - CPU: 4 cores
-  - RAM: 8 GB
-  - Disk: 5 GB free (models + DB)
-- Recommended:
-  - CPU: 8+ cores
-  - RAM: 16 GB
-  - Optional GPU for accelerated inference (via Ollama CUDA builds)
-- Software:
-  - Windows 10/11, macOS 12+, or modern Linux
-  - Python 3.10+
-  - Node.js 18+
-  - Ollama 0.3.12+
+* **Python** (3.10+): [https://www.python.org/downloads/](https://www.python.org/downloads/)
+* **Node.js** (18+ LTS): [https://nodejs.org/](https://nodejs.org/)
+* **Git**: [https://git-scm.com/downloads](https://git-scm.com/downloads)
+* **Ollama** (Local LLM Runtime): [https://ollama.com/](https://ollama.com/)
 
-### Dependency Links
+### Recommended AI Models
 
-- Python: https://www.python.org/downloads/
-- Node.js: https://nodejs.org/en/download/
-- Ollama: https://ollama.com/
-- FastAPI: https://fastapi.tiangolo.com/
-- Uvicorn: https://www.uvicorn.org/
+```bash
+ollama pull mistral:7b
+```
 
-## Verification Steps
+Tested alternatives:
 
-1. Check versions:
-   - `python --version`
-   - `node --version`
-   - `git --version`
-   - `ollama --version`
-2. Verify backend health:
-   - `curl http://localhost:8000/health` → should return JSON with `status: healthy`.
-3. Verify frontend:
-   - Open `http://localhost:3000/` and send a message.
-4. Verify LLM availability:
-   - `ollama run mistral:7b` (or your model) to confirm inference.
+* `llama3:8b`
+* `gemma:7b`
+* `qwen2:7b`
 
-## Performance & Caching
+Choose based on your hardware.
 
-- A DB-backed cache for frequently asked questions is enabled by default:
-  - Table: `response_cache` (encrypted at rest)
-  - TTL: 7 days
-  - Scope: caches general FAQs that have no personal memory/context
-- Prioritization:
-  - User-submitted questions take a fast path with reduced token limits and shorter timeouts to match preloaded prompt speed.
-- Configuration:
-  - Change model via `MYMITRA_OLLAMA_MODEL`
-  - Cache TTL can be tuned in `crud.get_cached_response` (minutes)
+---
 
-## Backward Compatibility
+## ⚙️ Quick Start
 
-- Existing API routes and request/response shapes are preserved.
-- New caching and fast-mode behavior is additive; defaults match previous behavior.
+### Clone the Repository
 
-## Version Control
+```bash
+git clone https://github.com/Rajbharti06/My-Mitra
+cd My-Mitra
+```
 
-- Repository uses semantic versioning; current backend version is `2.0.0` (see `backend/app/main.py`).
-- Useful commands:
-  - `git log -1 --oneline` → show current commit
-  - `git status` → check local changes
-  - `git tag` → list version tags (if present)
+### Backend Setup
 
-## Project Structure
+```bash
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r backend/requirements.txt
+```
+
+Create `backend/.env`:
+
+```env
+ENCRYPTION_KEY=your_32_char_secret_key_here
+OLLAMA_BASE_URL=http://localhost:11434
+MYMITRA_OLLAMA_MODEL=mistral:7b
+```
+
+Run backend:
+
+```bash
+uvicorn backend.app.main:app --reload --port 8000
+```
+
+---
+
+### Frontend Setup
+
+```bash
+cd frontend
+npm install
+npm start
+```
+
+Frontend runs at:
+
+```
+http://localhost:3000
+```
+
+---
+
+## 🧠 How the AI Works
+
+* **Primary LLM**: Local Ollama model
+* **Fast Mode**: Lightweight heuristic path for quick questions
+* **Fallback Mode**: Graceful personality-aware responses
+* **Encrypted Storage**: Chats, journals & habits stored securely
+* **Zero cloud dependency by default**
+
+---
+
+## 🖥️ System Requirements
+
+### Minimum
+
+* CPU: 4 cores
+* RAM: 8 GB
+* Disk: 5 GB free
+
+### Recommended
+
+* CPU: 8+ cores
+* RAM: 16 GB
+* Optional GPU (CUDA-supported Ollama builds)
+
+Supported OS:
+
+* Windows 10/11
+* macOS 12+
+* Modern Linux
+
+---
+
+## 📊 Performance & Caching
+
+* Encrypted DB-backed cache for non-personal FAQs
+* Cache TTL: 7 days
+* Personal conversations are **never cached**
+* Tunable fast-path limits for low-latency responses
+
+---
+
+## 🧪 Verification Checklist
+
+```bash
+python --version
+node --version
+git --version
+ollama --version
+```
+
+Health check:
+
+```bash
+curl http://localhost:8000/health
+```
+
+LLM check:
+
+```bash
+ollama run mistral:7b
+```
+
+---
+
+## 🗂️ Project Structure
 
 ```
 backend/
-  app/               # FastAPI app, models, routes, pipeline
-  llm/               # Ollama integration and response shaping
-frontend/            # React UI
+  app/        # FastAPI app, routes, models
+  llm/        # Ollama integration
+frontend/     # React UI
 ```
+
+---
+
+## 🛣️ Roadmap (What’s Coming Next)
+
+* 🔒 Multi-user encrypted profiles
+* 📱 Android APK export
+* 🧩 Custom personality creation
+* 📆 Smart routines & study planning
+* 🌙 Offline notifications
+* 🔌 Optional external LLM APIs (OpenAI / Grok / Gemini)
+* 🧠 Memory boundaries per personality
+
+---
+
+## 🤍 Who This Is For
+
+* Students under pressure
+* Builders working alone
+* People healing quietly
+* Anyone who wants an AI that **listens more than it talks**
+
+---
+
+## 📜 License & Contribution
+
+This project is evolving.
+
+* Contributions welcome (docs, UI, backend, ideas)
+* Please respect the **privacy-first philosophy**
+
+---
+
+## 🌌 Final Note
+
+MyMitra is built with patience.
+
+Not to replace people —
+but to remind you that **you’re not alone while becoming who you’re meant to be**.
+
+If this resonates, ⭐ the repo and walk with us.
