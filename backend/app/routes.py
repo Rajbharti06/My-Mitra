@@ -56,6 +56,34 @@ def create_user(user: "schemas.UserCreate", db: "Session" = Depends(get_db)):
         raise HTTPException(status_code=400, detail="Username already registered")
     return crud.create_user(db=db, user=user)
 
+@router.post("/token", response_model=schemas.Token)
+async def login_for_access_token(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    db: Any = Depends(get_db),
+):
+    """
+    OAuth2-compatible token endpoint expected by the frontend.
+    Uses local JWT auth (Ollama-only, no external services).
+    """
+    user = crud.get_user(db, username=form_data.username)
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    if not security.verify_password(form_data.password, user.hashed_password):
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    is_admin = bool(getattr(user, "role", None) == "admin")
+    access_token = security.create_access_token({"sub": user.username}, is_admin=is_admin)
+    return {"access_token": access_token, "token_type": "bearer"}
+
 @router.post("/chat/", response_model=dict)
 async def chat_with_mymitra(
     message: schemas.ChatMessageCreate, 
@@ -80,7 +108,7 @@ async def chat_with_mymitra(
             await manager.send_typing_indicator(session_id, current_user.id, True)
         
         # Get AI response using enhanced pipeline
-        result = enhanced_chat_pipeline.get_mitra_reply(
+        result = await enhanced_chat_pipeline.get_mitra_reply(
             user_input=message.message,
             user_id=current_user.id if current_user else None,
             db=db if current_user else None,
@@ -103,18 +131,24 @@ async def chat_with_mymitra(
         # Analyze emotion if user is authenticated
         if current_user:
             try:
-                from core.emotion_engine import analyze_emotion
-                emotion_result = analyze_emotion(message.message)
-                
-                # Store emotion record
+                # Use Mitra Core Brain emotion output to keep this lightweight and consistent.
+                emotion_result = result.get("emotion") or {}
+
+                primary_emotion = str(emotion_result.get("primary_emotion", "neutral"))
+                primary_intensity = str(emotion_result.get("primary_intensity", "medium"))
+                confidence = float(emotion_result.get("confidence", 0.5))
+
+                # Store emotion record (sentiment values not produced by rule-based brain).
                 emotion_record = models.EmotionRecord(
                     user_id=current_user.id,
-                    primary_emotion=emotion_result.category.value,
-                    primary_intensity=emotion_result.intensity.value,
-                    confidence=emotion_result.confidence,
-                    sentiment_polarity=emotion_result.sentiment_scores.get("polarity", 0),
-                    sentiment_subjectivity=emotion_result.sentiment_scores.get("subjectivity", 0),
-                    text_snapshot=encryption_utils.encrypt_data(message.message).encode('utf-8')
+                    primary_emotion=primary_emotion,
+                    primary_intensity=primary_intensity,
+                    confidence=confidence,
+                    sentiment_polarity=0,
+                    sentiment_subjectivity=0,
+                    source_text=encryption_utils.encrypt_data(message.message),
+                    detection_method="mitra_core_rule_based",
+                    source_type="chat",
                 )
                 db.add(emotion_record)
                 db.commit()
@@ -305,10 +339,18 @@ async def create_habit(habit: "schemas.HabitCreate", db: "Session" = Depends(get
     # Log in long-term memory if available
     try:
         if enhanced_chat_pipeline.long_term_memory:
-            enhanced_chat_pipeline.long_term_memory.add_memory(
-                f"New habit created: {habit.title} - {habit.description}",
-                {"session_id": current_user.username, "type": "habit_creation"}
-            )
+            settings_obj = crud.get_user_settings(db, current_user.id)
+            if (
+                getattr(settings_obj, "enable_long_term_memory", True)
+                and getattr(settings_obj, "allow_routine_tracking", True)
+            ):
+                desc = (habit.description or "").strip()
+                enhanced_chat_pipeline.long_term_memory.store_memory_with_category(
+                    user_id=current_user.id,
+                    content=f"[routine] New habit created: {habit.title} - {desc}",
+                    memory_type="habit_creation",
+                    memory_category="routine",
+                )
     except Exception:
         pass
     return obj
@@ -434,10 +476,17 @@ def create_journal(journal: "schemas.JournalCreate", db: "Session" = Depends(get
     obj = crud.create_journal(db, user_id=current_user.id, journal=journal)
     try:
         if enhanced_chat_pipeline.long_term_memory:
-            enhanced_chat_pipeline.long_term_memory.add_memory(
-                f"New journal entry: {journal.content}",
-                {"session_id": current_user.username, "type": "journal_entry", "mood": journal.mood}
-            )
+            settings_obj = crud.get_user_settings(db, current_user.id)
+            if getattr(settings_obj, "enable_long_term_memory", True) and getattr(settings_obj, "allow_mental_health_inference", False):
+                content = (journal.content or "").strip()
+                if content and len(content) > 700:
+                    content = content[:700] + "..."
+                enhanced_chat_pipeline.long_term_memory.store_memory_with_category(
+                    user_id=current_user.id,
+                    content=f"[mental_health] New journal entry: {content}",
+                    memory_type="journal_entry",
+                    memory_category="mental_health",
+                )
     except Exception:
         pass
     return schemas.Journal(id=obj.id, user_id=obj.user_id, content=journal.content)

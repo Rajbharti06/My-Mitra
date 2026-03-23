@@ -3,6 +3,7 @@ import datetime
 import chromadb
 from chromadb.utils import embedding_functions
 import encryption_utils
+from typing import Optional, List
 
 class LongTermMemory:
     def __init__(self, collection_name="mymitra_memory", persist_directory="./chroma_db"):
@@ -35,62 +36,85 @@ class LongTermMemory:
         )
         return unique_id
     
-    def retrieve_memories(self, query_text, user_id=None, top_k=4):
-        """
-        Retrieve relevant memories based on query text.
-        
-        Args:
-            query_text: The text to search for similar memories
-            user_id: Optional user ID for filtering (not used yet)
-            top_k: Number of results to return
-            
-        Returns:
-            List of decrypted memory strings
-        """
-        results = self.retrieve_memory(query_text=query_text, n_results=top_k)
-        # The pipeline expects a flat list of strings
-        if results and len(results) > 0:
-            return results[0]
-        return []
+    def retrieve_memories(
+        self,
+        query_text: str,
+        user_id: Optional[int] = None,
+        top_k: int = 4,
+        allowed_categories: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Retrieve relevant memories scoped to user and (optionally) categories."""
+        candidates = self.retrieve_memory(
+            query_text=query_text,
+            n_results=max(top_k * 5, top_k),
+            user_id=user_id,
+            allowed_categories=allowed_categories,
+        )
+        return candidates[:top_k]
         
     def store_memory(self, user_id, content, memory_type="conversation"):
+        """Backward-compatible wrapper for category-less storage."""
+        return self.store_memory_with_category(
+            user_id=user_id,
+            content=content,
+            memory_type=memory_type,
+            memory_category=memory_type,
+        )
+
+    def store_memory_with_category(
+        self,
+        user_id,
+        content: str,
+        memory_type: str = "conversation",
+        memory_category: str = "conversation",
+    ):
         """
-        Store a memory with user ID and type metadata.
-        
-        Args:
-            user_id: The user ID to associate with this memory
-            content: The text content to store
-            memory_type: Type of memory (conversation, journal, etc.)
-            
-        Returns:
-            ID of the stored memory
+        Store a memory with explicit category for consent-based retrieval.
         """
         metadata = {
             "user_id": str(user_id),
             "type": memory_type,
-            "timestamp": str(datetime.datetime.now())
+            "category": memory_category,
+            "timestamp": str(datetime.datetime.now()),
         }
         return self.add_memory(content, metadata)
 
-    def retrieve_memory(self, query_text, n_results=1):
+    def retrieve_memory(
+        self,
+        query_text: str,
+        n_results: int = 1,
+        *,
+        user_id: Optional[int] = None,
+        allowed_categories: Optional[List[str]] = None,
+    ) -> List[str]:
+        """Retrieve and decrypt memories scoped to a user and categories."""
+        where = {"user_id": str(user_id)} if user_id is not None else None
+
         results = self.collection.query(
             query_texts=[query_text],
-            n_results=n_results
+            n_results=n_results,
+            where=where,
+            include=["documents", "metadatas"],
         )
-        
-        # Decrypt memories before returning
-        documents = results.get('documents', [])
-        decrypted_docs = []
-        for doc_list in documents:
-            decrypted_list = []
-            for doc in doc_list:
+
+        documents = results.get("documents", [])
+        metadatas = results.get("metadatas", [])
+
+        decrypted_docs: List[str] = []
+
+        # One query_text => one result list. Keep code resilient to Chroma shape.
+        for doc_list, meta_list in zip(documents, metadatas):
+            for doc, meta in zip(doc_list, meta_list or []):
+                cat = (meta or {}).get("category") or (meta or {}).get("type")
+                if allowed_categories is not None and cat not in allowed_categories:
+                    continue
                 try:
                     decrypted = encryption_utils.decrypt_data(doc)
-                    decrypted_list.append(decrypted)
+                    decrypted_docs.append(decrypted)
                 except Exception:
-                    # Skip corrupted or unencrypted entries
                     continue
-            decrypted_docs.append(decrypted_list)
+            break
+
         return decrypted_docs
 
     def list_all_memories(self):
@@ -106,9 +130,18 @@ def retrieve_memories(user_id: str, query: str, top_k: int = 4):
     Retrieves memories for a user based on a query.
     NOTE: user_id is not used yet, but will be used for multi-user support.
     """
-    memory = LongTermMemory()
-    results = memory.retrieve_memory(query_text=query, n_results=top_k)
-    # The pipeline expects a flat list of strings
-    if results and len(results) > 0:
-        return results[0]
-    return []
+    try:
+        global _long_term_memory_instance
+        if _long_term_memory_instance is None:
+            _long_term_memory_instance = LongTermMemory()
+        return _long_term_memory_instance.retrieve_memories(
+            query_text=query,
+            user_id=int(user_id),
+            top_k=top_k,
+            allowed_categories=None,
+        )
+    except Exception:
+        return []
+
+
+_long_term_memory_instance: Optional[LongTermMemory] = None

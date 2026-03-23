@@ -120,7 +120,7 @@ function Habits() {
       
       // Create new WebSocket connection with authentication
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       const wsUrl = `${protocol}//${window.location.host}/ws/habits${token ? `?token=${encodeURIComponent(token)}` : ''}`;
       
       ws = new WebSocket(wsUrl);

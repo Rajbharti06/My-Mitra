@@ -5,6 +5,8 @@ import sys
 import os
 sys.path.append(os.path.dirname(os.path.dirname(__file__)))
 import encryption_utils
+import json
+import hashlib
 from datetime import datetime, timedelta
 from typing import List, Optional
 
@@ -44,6 +46,126 @@ def update_user_personality(db: Session, user_id: int, personality: str):
     )
     db.commit()
     return True
+
+
+def get_user_settings(db: Session, user_id: int) -> models.UserSettings:
+    """Get or create per-user settings (adaptive memory opt-ins, retention)."""
+    settings_obj = db.query(models.UserSettings).filter(models.UserSettings.user_id == user_id).first()
+    if settings_obj:
+        return settings_obj
+    settings_obj = models.UserSettings(user_id=user_id)
+    db.add(settings_obj)
+    db.commit()
+    db.refresh(settings_obj)
+    return settings_obj
+
+
+def update_user_memory_preferences(
+    db: Session,
+    user_id: int,
+    prefs: schemas.MemoryPreferencesUpdate,
+) -> models.UserSettings:
+    """Update adaptive memory opt-in categories."""
+    settings_obj = get_user_settings(db, user_id)
+    settings_obj.allow_routine_tracking = bool(prefs.allow_routine_tracking)
+    settings_obj.allow_preference_learning = bool(prefs.allow_preference_learning)
+    settings_obj.allow_mental_health_inference = bool(prefs.allow_mental_health_inference)
+    db.commit()
+    db.refresh(settings_obj)
+    return settings_obj
+
+
+def update_memory_rate_limit_timestamps(
+    db: Session,
+    user_id: int,
+    *,
+    update_preference_at: Optional[datetime] = None,
+    update_routine_at: Optional[datetime] = None,
+) -> None:
+    settings_obj = get_user_settings(db, user_id)
+    if update_preference_at is not None:
+        settings_obj.last_preference_memory_at = update_preference_at
+    if update_routine_at is not None:
+        settings_obj.last_routine_memory_at = update_routine_at
+    db.commit()
+
+
+def create_system_action_approval(
+    db: Session,
+    user_id: int,
+    action_type: str,
+    params: dict,
+    summary: str,
+    *,
+    expires_minutes: int = 5,
+) -> models.SystemActionApproval:
+    """Create a pending approval record for an allowlisted system action."""
+    # Canonicalize and hash the params to bind preview->execution.
+    params_json = json.dumps(params, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    params_hash = hashlib.sha256(params_json.encode("utf-8")).hexdigest()
+    params_encrypted = encryption_utils.encrypt_data(params_json).encode("utf-8")
+
+    expires_at = datetime.utcnow() + timedelta(minutes=expires_minutes)
+    approval = models.SystemActionApproval(
+        user_id=user_id,
+        action_type=action_type,
+        params_encrypted=params_encrypted,
+        params_hash=params_hash,
+        summary=summary,
+        status="pending",
+        expires_at=expires_at,
+    )
+    db.add(approval)
+    db.commit()
+    db.refresh(approval)
+    return approval
+
+
+def get_system_action_approval_for_user(
+    db: Session,
+    user_id: int,
+    approval_id: int,
+) -> Optional[models.SystemActionApproval]:
+    return (
+        db.query(models.SystemActionApproval)
+        .filter(models.SystemActionApproval.id == approval_id, models.SystemActionApproval.user_id == user_id)
+        .first()
+    )
+
+
+def decide_system_action(
+    db: Session,
+    approval: models.SystemActionApproval,
+    *,
+    approve: bool,
+    status_if_denied: str = "denied",
+) -> models.SystemActionApproval:
+    approval.status = status_if_denied if not approve else "approved"
+    approval.decided_at = datetime.utcnow()
+    db.commit()
+    db.refresh(approval)
+    return approval
+
+
+def mark_system_action_executed(
+    db: Session,
+    approval: models.SystemActionApproval,
+    *,
+    status: str,
+    result_preview: Optional[str] = None,
+    error_preview: Optional[str] = None,
+) -> models.SystemActionApproval:
+    approval.status = status  # executed/failed
+    approval.executed_at = datetime.utcnow()
+    approval.error_preview = error_preview
+
+    if result_preview is not None:
+        preview = result_preview[:5000]  # avoid huge DB rows
+        approval.result_preview_encrypted = encryption_utils.encrypt_data(preview).encode("utf-8")
+
+    db.commit()
+    db.refresh(approval)
+    return approval
 
 # Chat Messages
 

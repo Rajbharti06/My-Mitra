@@ -37,6 +37,14 @@ function Chat() {
   const [connectionStatus, setConnectionStatus] = useState('disconnected'); // 'connected', 'connecting', 'disconnected', 'error'
   const [remoteTyping, setRemoteTyping] = useState(false);
   const [messageQueue, setMessageQueue] = useState([]);
+
+  // Mitra Core Brain outputs
+  const [identityProfile, setIdentityProfile] = useState(null);
+  const [actionSuggestions, setActionSuggestions] = useState([]);
+
+  // System action confirmation (preview -> approve/deny -> execute)
+  const [systemActionModalOpen, setSystemActionModalOpen] = useState(false);
+  const [pendingSystemApproval, setPendingSystemApproval] = useState(null); // { approval_id, summary }
   
   const chatWindowRef = useRef(null);
   const wsRef = useRef(null);
@@ -86,7 +94,7 @@ function Chat() {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws/chat/${sessionId}`;
       
-      const token = localStorage.getItem('token');
+      const token = localStorage.getItem('access_token');
       const ws = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`);
       
       ws.onopen = () => {
@@ -402,21 +410,28 @@ function Chat() {
         emotion: currentEmotion.emotion
       };
 
-      const wsDelivered = sendWebSocketMessage(wsMessage);
+      sendWebSocketMessage(wsMessage);
       
       // Always send via HTTP API as fallback and for persistence
       const response = await api.sendMessage(messageText, sessionId, currentPersonality);
-      
-      // If WebSocket wasn't available, add AI response from HTTP
-      if (!wsDelivered) {
-        const aiMessage = {
-          sender: 'ai',
-          text: response.response || response.message || 'I apologize, but I couldn\'t process your message.',
-          timestamp: response.created_at || new Date().toISOString(),
-          emotion: response.detected_emotion || 'neutral'
-        };
-        setMessages(prev => [...prev, aiMessage]);
-      }
+
+      // WebSocket is typing/status-only in this build; always render the AI response from HTTP.
+      const aiMessage = {
+        sender: 'ai',
+        text: response.response || response.message || 'I apologize, but I couldn\'t process your message.',
+        timestamp: response.created_at || new Date().toISOString(),
+        emotion: response.emotion?.primary_emotion || response.detected_emotion || 'neutral'
+      };
+
+      // Presence delay: a tiny pacing so the assistant feels more "alive".
+      const intensity = response.emotion?.primary_intensity || 'medium';
+      const delayMs = intensity === 'high' ? 650 : 300;
+      await new Promise((resolve) => setTimeout(resolve, delayMs));
+      setMessages(prev => [...prev, aiMessage]);
+
+      // Update Mitra Core Brain panels.
+      if (response.identity_profile) setIdentityProfile(response.identity_profile);
+      if (Array.isArray(response.action_suggestions)) setActionSuggestions(response.action_suggestions);
 
       // Align session ID with server in case it generated a new one
       if (response.session_id && response.session_id !== sessionId) {
@@ -429,7 +444,12 @@ function Chat() {
         }
       }
       
-      if (response.detected_emotion) {
+      if (response.emotion?.primary_emotion) {
+        setCurrentEmotion({
+          emotion: response.emotion.primary_emotion,
+          intensity: response.emotion.primary_intensity || 'medium'
+        });
+      } else if (response.detected_emotion) {
         setCurrentEmotion({
           emotion: response.detected_emotion,
           intensity: response.emotion_intensity || 'medium'
@@ -533,6 +553,13 @@ function Chat() {
                 Mitra is typing...
               </div>
             )}
+            {isTyping && !remoteTyping && (
+              <div className="text-xs text-gray-500 dark:text-gray-400 italic">
+                {currentEmotion.emotion === 'anxious' || currentEmotion.emotion === 'stressed'
+                  ? 'Take a slow breath...'
+                  : 'Thinking...'}
+              </div>
+            )}
         </div>
         <div className="flex items-center gap-2">
             {/* Connection Status Indicator */}
@@ -571,6 +598,20 @@ function Chat() {
             </motion.button>
           </div>
         </div>
+
+        {/* Identity / presence panel */}
+        {identityProfile && (
+          <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            <div className="text-xs font-semibold text-gray-800 dark:text-gray-200">What I understand about you</div>
+            <div className="text-[11px] text-gray-600 dark:text-gray-400 mt-1">
+              Phase: {identityProfile.current_phase} · Decision style: {identityProfile.decision_style}
+              · Energy: {identityProfile.energy_pattern}
+            </div>
+            <div className="text-[11px] text-gray-600 dark:text-gray-400 mt-1">
+              Traits: {(identityProfile.core_traits || []).slice(0, 4).join(", ")}
+            </div>
+          </div>
+        )}
 
         {/* Preferences Modal: Personality selection */}
         {preferencesOpen && (
@@ -621,6 +662,35 @@ function Chat() {
           )}
         </div>
 
+        {/* Action suggestions */}
+        {Array.isArray(actionSuggestions) && actionSuggestions.length > 0 && (
+          <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
+            <div className="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2">Next actions</div>
+            <div className="flex flex-wrap gap-2">
+              {actionSuggestions
+                .filter((a) => a?.kind === 'system')
+                .map((a, idx) => (
+                  <button
+                    key={`${a.action_type}-${idx}`}
+                    className="text-xs px-3 py-2 rounded bg-blue-600 text-white hover:opacity-90"
+                    onClick={async () => {
+                      try {
+                        const resp = await api.previewSystemAction(a.action_type, a.params || {});
+                        setPendingSystemApproval({ approval_id: resp.approval_id, summary: resp.summary });
+                        setSystemActionModalOpen(true);
+                      } catch (e) {
+                        toast.error('Failed to request action preview');
+                      }
+                    }}
+                    title={a.summary}
+                  >
+                    {a.action_type}
+                  </button>
+                ))}
+            </div>
+          </div>
+        )}
+
         {/* Input */}
         <div className="p-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2">
@@ -640,6 +710,53 @@ function Chat() {
             </motion.button>
           </div>
         </div>
+
+        {/* System action confirmation modal */}
+        {systemActionModalOpen && pendingSystemApproval && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
+            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg w-[520px] p-4">
+              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
+                Confirm system action
+              </h3>
+              <p className="text-xs text-gray-600 dark:text-gray-300 mb-4">{pendingSystemApproval.summary}</p>
+              <div className="flex gap-2">
+                <button
+                  className="flex-1 bg-blue-600 text-white rounded-xl px-3 py-2 text-sm font-semibold hover:opacity-90"
+                  onClick={async () => {
+                    try {
+                      const resp = await api.commitSystemAction(pendingSystemApproval.approval_id, true);
+                      if (resp?.ok) toast.success('Action executed');
+                      else toast.error(resp?.error || 'Action failed');
+                    } catch (e) {
+                      toast.error('Execution failed');
+                    } finally {
+                      setSystemActionModalOpen(false);
+                      setPendingSystemApproval(null);
+                    }
+                  }}
+                >
+                  Allow
+                </button>
+                <button
+                  className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl px-3 py-2 text-sm font-semibold hover:opacity-90"
+                  onClick={async () => {
+                    try {
+                      await api.commitSystemAction(pendingSystemApproval.approval_id, false);
+                      toast.info('Action denied');
+                    } catch (e) {
+                      toast.error('Failed to deny');
+                    } finally {
+                      setSystemActionModalOpen(false);
+                      setPendingSystemApproval(null);
+                    }
+                  }}
+                >
+                  Deny
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

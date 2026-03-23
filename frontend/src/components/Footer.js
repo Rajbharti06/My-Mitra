@@ -3,7 +3,7 @@ import './Footer.css';
 
 function Footer() {
   const handleDownloadData = async () => {
-    const token = localStorage.getItem('token');
+    const token = localStorage.getItem('access_token');
     if (!token) {
       alert('Please log in to download your data.');
       return;

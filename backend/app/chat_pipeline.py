@@ -40,7 +40,7 @@ IMPLEMENTATION NOTES:
 - Prefer follow-ups & micro-actions (tiny wins).
 - If the user requests legal/medical/financial decisions, state limitations and suggest seeking a professional; provide generic, non-prescriptive guidance only.
 
-END SYSTEM PROMPT""
+END SYSTEM PROMPT"""
 
 FEW_SHOT = '''EXAMPLE 1
 User: "I can't sleep and have an exam tomorrow."
@@ -76,9 +76,7 @@ def build_prompt(user_id: str, user_message: str):
     mem_text = ""
     if memories:
         # Per instructions, cite one brief memory
-        mem_text = f"REMEMBERED: (I remember you mentioned: {memories[0]})
-
-"
+        mem_text = f"REMEMBERED: (I remember you mentioned: {memories[0]})\n\n"
 
     # 3. assemble prompt
     prompt = f"{SYSTEM_PROMPT}\n\n{FEW_SHOT}\n\n{mem_text}CONTEXT:\n{ctx_text}\n\nUser: {user_message}\nMyMitra:"

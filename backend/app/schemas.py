@@ -1,5 +1,5 @@
 from pydantic import BaseModel, ConfigDict
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from datetime import datetime
 
 class Token(BaseModel):
@@ -46,6 +46,39 @@ class PersonalityInfo(BaseModel):
 
 class PersonalitySwitch(BaseModel):
     personality: str
+
+# --- Memory Preferences ---
+class MemoryPreferences(BaseModel):
+    allow_routine_tracking: bool
+    allow_preference_learning: bool
+    allow_mental_health_inference: bool
+    enable_long_term_memory: bool
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+class MemoryPreferencesUpdate(BaseModel):
+    allow_routine_tracking: bool
+    allow_preference_learning: bool
+    allow_mental_health_inference: bool
+
+
+# --- System Actions (authorized, allowlisted) ---
+class SystemActionPreviewRequest(BaseModel):
+    action_type: str
+    params: Dict[str, Any] = {}
+
+
+class SystemActionPreviewResponse(BaseModel):
+    approval_id: int
+    action_type: str
+    summary: str
+    expires_at: datetime
+
+
+class SystemActionCommitRequest(BaseModel):
+    approval_id: int
+    approve: bool = True
 
 # --- Emotion Schemas ---
 class EmotionAnalysisRequest(BaseModel):

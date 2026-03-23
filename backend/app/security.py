@@ -71,9 +71,9 @@ def get_current_user(token: str, db):
         headers={"WWW-Authenticate": "Bearer"},
     )
     
-    # For testing purposes, allow a test token
-    if token == "test_token":
-        # Create a proper user object for testing
+    # Development-only: allow a test token when explicitly enabled.
+    # Never accept this token in production.
+    if token == "test_token" and os.getenv("ALLOW_TEST_TOKEN", "false").lower() == "true":
         test_user = models.User()
         test_user.id = 1
         test_user.username = "testuser"

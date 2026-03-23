@@ -99,6 +99,13 @@ class UserSettings(Base):
     chat_history_retention_days = Column(Integer, default=30)
     enable_long_term_memory = Column(Boolean, default=True)
     privacy_mode = Column(Boolean, default=True)
+    # Adaptive memory opt-in categories (privacy boundary control).
+    allow_routine_tracking = Column(Boolean, default=True)
+    allow_preference_learning = Column(Boolean, default=True)
+    allow_mental_health_inference = Column(Boolean, default=False)
+    # Rate limits to keep memory updates lightweight.
+    last_preference_memory_at = Column(DateTime(timezone=True), nullable=True)
+    last_routine_memory_at = Column(DateTime(timezone=True), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -115,3 +122,31 @@ class ResponseCache(Base):
     __table_args__ = (
         UniqueConstraint('question_key', 'personality', name='uq_response_cache_question_personality'),
     )
+
+
+class SystemActionApproval(Base):
+    """
+    Stores a user-approved system/tool action request.
+    Execution only happens after a UI confirmation and while the approval is valid.
+    """
+    __tablename__ = "system_action_approvals"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    action_type = Column(String, index=True, nullable=False)
+
+    # Encrypted JSON payload (params) to prevent server-side tampering.
+    params_encrypted = Column(LargeBinary, nullable=False)
+    params_hash = Column(String, index=True, nullable=False)
+
+    summary = Column(String, nullable=False)
+    status = Column(String, default="pending", index=True)  # pending/denied/executed/failed/expired
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    decided_at = Column(DateTime(timezone=True), nullable=True)
+    executed_at = Column(DateTime(timezone=True), nullable=True)
+
+    # Encrypted short preview for auditing (avoid storing full file contents).
+    result_preview_encrypted = Column(LargeBinary, nullable=True)
+    error_preview = Column(String, nullable=True)

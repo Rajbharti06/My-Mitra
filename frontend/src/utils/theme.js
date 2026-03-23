@@ -74,6 +74,11 @@ export const ThemeProvider = ({ children }) => {
     return saved ? JSON.parse(saved) : false;
   });
 
+  const [performanceMode, setPerformanceMode] = useState(() => {
+    const saved = localStorage.getItem('mitra-performance-mode');
+    return saved ? JSON.parse(saved) : false;
+  });
+
   useEffect(() => {
     localStorage.setItem('mitra-theme', JSON.stringify(isDark));
     if (isDark) {
@@ -83,11 +88,16 @@ export const ThemeProvider = ({ children }) => {
     }
   }, [isDark]);
 
+  useEffect(() => {
+    localStorage.setItem('mitra-performance-mode', JSON.stringify(performanceMode));
+  }, [performanceMode]);
+
   const toggleTheme = () => setIsDark(!isDark);
+  const togglePerformanceMode = () => setPerformanceMode(!performanceMode);
   const currentTheme = isDark ? themes.dark : themes.light;
 
   return (
-    <ThemeContext.Provider value={{ isDark, toggleTheme, currentTheme, themes }}>
+    <ThemeContext.Provider value={{ isDark, toggleTheme, currentTheme, themes, performanceMode, togglePerformanceMode }}>
       {children}
     </ThemeContext.Provider>
   );

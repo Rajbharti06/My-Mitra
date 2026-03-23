@@ -177,3 +177,21 @@ export const exportData = () => {
 export const isAuthenticated = () => !!getToken();
 export const logout = async () => { clearToken(); return { message: 'Logged out' }; };
 export const switchPersonality = (type) => request(`/personality/switch/${type}`, { method: 'POST' });
+
+// Adaptive memory
+export const getMemoryPreferences = () => request('/memory/preferences');
+export const updateMemoryPreferences = (prefs) =>
+  request('/memory/preferences', { method: 'PUT', body: JSON.stringify(prefs) });
+
+// System actions (authorized, allowlisted)
+export const getSystemCapabilities = () => request('/system/capabilities');
+export const previewSystemAction = (action_type, params = {}) =>
+  request('/system/actions/preview', {
+    method: 'POST',
+    body: JSON.stringify({ action_type, params }),
+  });
+export const commitSystemAction = (approval_id, approve) =>
+  request('/system/actions/commit', {
+    method: 'POST',
+    body: JSON.stringify({ approval_id, approve }),
+  });

@@ -17,11 +17,23 @@ def encrypt_data(data: str) -> str:
     cipher = AES.new(KEY.encode(), AES.MODE_EAX)
     nonce = cipher.nonce
     ciphertext, tag = cipher.encrypt_and_digest(data.encode())
-    return base64.b64encode(nonce + ciphertext).decode()
+    # Store nonce + ciphertext + tag so decrypt can verify integrity.
+    return base64.b64encode(nonce + ciphertext + tag).decode()
 
 def decrypt_data(encrypted_data: str) -> str:
     raw = base64.b64decode(encrypted_data)
     nonce = raw[:16]
-    ciphertext = raw[16:]
     cipher = AES.new(KEY.encode(), AES.MODE_EAX, nonce=nonce)
+
+    # Backward compatibility:
+    # - old format: nonce (16) + ciphertext
+    # - new format: nonce (16) + ciphertext + tag (16)
+    if len(raw) >= 16 + 16:
+        tag = raw[-16:]
+        ciphertext = raw[16:-16]
+        return cipher.decrypt_and_verify(ciphertext, tag).decode()
+
+    # Very old/corrupted payloads (no tag): decrypt without verification.
+    # This should be temporary; new writes always include the tag.
+    ciphertext = raw[16:]
     return cipher.decrypt(ciphertext).decode()

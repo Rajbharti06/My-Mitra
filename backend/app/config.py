@@ -6,6 +6,7 @@ Handles environment variables and application settings.
 import os
 from typing import List
 from dotenv import load_dotenv
+from pathlib import Path
 
 # Load environment variables from .env file
 load_dotenv()
@@ -68,6 +69,10 @@ class Settings:
             "emoji": "🤖"
         }
     }
+
+    # Local filesystem sandbox root for authorized system actions.
+    # All file operations must be confined within this directory.
+    SANDBOX_ROOT: str = os.getenv("SANDBOX_ROOT", str(Path.home() / ".mymitra_sandbox"))
     
     @classmethod
     def validate_config(cls) -> bool:

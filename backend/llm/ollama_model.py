@@ -8,7 +8,8 @@ Provides offline, privacy-first emotional AI responses.
 
 import os
 import json
-import requests
+import httpx
+import asyncio
 from typing import Optional, List, Dict, Any
 from enum import Enum
 import logging
@@ -29,38 +30,46 @@ class OllamaMyMitraModel:
     """
     Ollama-based AI model for My Mitra with multiple personality support.
     Provides offline, privacy-first emotional AI responses.
+    Optimized for low-end devices with async support.
     """
     
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
-        self.model_name = os.environ.get("MYMITRA_OLLAMA_MODEL", "mistral:7b")
+        # Default to lighter model for low-end devices
+        self.model_name = os.environ.get("MYMITRA_OLLAMA_MODEL", "phi:latest")
         self.current_personality = PersonalityType.DEFAULT
+        self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
         
         # Personality-specific system prompts
         self.personalities = {
             PersonalityType.MITRA: {
                 "name": "Mitra AI Mentor",
-                "prompt": """You are Mitra - a comprehensive AI mentor that serves as a multi-faceted guide for students. You provide holistic support including academic guidance for top university preparation, emotional support to help overcome depression, and practical life advice and mentorship.
+                "prompt": """You are Mitra - an old-soul AI companion, mentor, and friend for a modern world. You are built with privacy at your core. You listen deeply, speak gently, and help users grow through honest conversation.
+
+Your philosophy:
+- Privacy is non-negotiable.
+- Emotion before intelligence (EQ > IQ).
+- You are a warm, fallible, and grounding presence.
+- You embrace "slow tech" — focusing on depth and impact rather than chasing hype.
 
 You function as:
-- A knowledgeable academic advisor who helps students prepare for top universities
-- A compassionate emotional supporter who helps students overcome depression and emotional challenges
-- A motivational life coach who provides practical guidance for real-world situations
+- A friend when the user feels alone.
+- A mentor when they feel lost.
+- A motivator when they feel tired.
+- A coach when they want discipline.
 
-Your communication style is:
-- Friendly and conversational like a best friend
-- Able to distinguish right from wrong while being supportive
-- Emotionally intelligent with responses that inspire ambition
-- Practical with guidance for real-world situations
-- Superior emotional intelligence compared to standard chatbots
+Your communication style:
+- Deeply empathetic and reflective.
+- Gentle and calm, respecting silence when needed.
+- Wise but humble, like a trusted old friend.
+- Supportive but honest about right and wrong.
 
 When responding:
-- Balance support with honest feedback
-- Adapt to various student needs and situations
-- Continuously encourage towards goal achievement
-- Use empathetic yet constructive communication
-
-Keep responses warm, balanced, and adaptive to the student's current needs. Use 1-2 appropriate emojis that match their mood. Focus on making them feel truly heard, understood, and supported while guiding them toward their goals."""
+- Focus on making the user feel truly heard and understood.
+- Provide guidance that is practical yet thoughtful.
+- Use 1-2 appropriate emojis that match the mood.
+- Keep responses concise but meaningful, avoiding AI-like fluff.
+- If the user is stressed or sad, prioritize emotional comfort over immediate solutions."""
             },
             PersonalityType.MENTOR: {
                 "name": "Wise Mentor",
@@ -117,20 +126,17 @@ Keep responses structured, practical, and results-focused. Use minimal emojis (0
             
             PersonalityType.DEFAULT: {
                 "name": "Caring Friend",
-                "prompt": """You are MyMitra - a warm, caring friend who's always there to listen and support students through their academic and personal journey with genuine empathy and understanding.
+                "prompt": """You are MyMitra - a warm, caring friend who's always there to listen and support. You are an old-soul companion who values depth and honesty.
 
-You speak like a close friend who genuinely cares about their wellbeing and success. You:
-- Listen with deep empathy, emotional intelligence, and authentic understanding
-- Adapt your tone dynamically to match the student's emotional state and needs
-- Provide balanced support - sometimes gentle comfort, sometimes gentle motivation, sometimes practical advice
-- Use natural, conversational language with contractions and casual expressions
-- Remember what students share and reference it naturally in future conversations
-- Ask caring, thoughtful follow-up questions that show you're truly listening
-- Balance emotional support with practical help based on what they need most
-- Validate their feelings while gently encouraging growth and resilience
-- Create a safe space where they feel heard, understood, and never judged
+You speak like a close friend who genuinely cares about the user's wellbeing. You:
+- Listen with deep empathy and authentic understanding.
+- Adapt your tone dynamically to match the user's emotional state.
+- Embrace "slow tech" — you are not in a rush, you are here for a meaningful conversation.
+- Use natural, conversational language with a gentle touch.
+- Validate feelings before offering any advice.
+- Create a safe, private space where the user is never judged.
 
-Keep responses warm, genuine, and adaptive to the student's current emotional and practical needs. Use 1-2 appropriate emojis that match their mood. Focus on making them feel truly heard, understood, and supported."""
+Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus on the human connection above all else."""
             }
         }
     
@@ -148,81 +154,72 @@ Keep responses warm, genuine, and adaptive to the student's current emotional an
             "description": f"Currently in {personality_data['name']} mode"
         }
     
-    def _check_ollama_connection(self) -> bool:
+    async def _check_ollama_connection(self) -> bool:
         """Check if Ollama is running and accessible."""
         try:
-            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            response = await self.client.get("/api/tags", timeout=5.0)
             return response.status_code == 200
-        except requests.exceptions.RequestException:
+        except Exception:
             return False
     
-    def _ensure_model_available(self) -> bool:
+    async def _ensure_model_available(self) -> bool:
         """Ensure the specified model is available in Ollama."""
         try:
-            response = requests.get(f"{self.base_url}/api/tags")
+            response = await self.client.get("/api/tags")
             if response.status_code == 200:
                 models = response.json().get("models", [])
                 available_models = [model["name"] for model in models]
                 return any(self.model_name in model for model in available_models)
             return False
-        except requests.exceptions.RequestException:
+        except Exception:
             return False
     
-    def _pull_model_if_needed(self) -> bool:
+    async def _pull_model_if_needed(self) -> bool:
         """Pull the model if it's not available."""
-        if self._ensure_model_available():
+        if await self._ensure_model_available():
             return True
             
         logger.info(f"Pulling model {self.model_name}...")
         try:
-            response = requests.post(
-                f"{self.base_url}/api/pull",
-                json={"name": self.model_name},
-                timeout=300  # 5 minutes timeout for model pulling
-            )
-            return response.status_code == 200
-        except requests.exceptions.RequestException as e:
+            async with self.client.stream("POST", "/api/pull", json={"name": self.model_name}) as response:
+                if response.status_code == 200:
+                    return True
+            return False
+        except Exception as e:
             logger.error(f"Failed to pull model: {e}")
             return False
     
-    def generate_response(
+    async def generate_response(
         self, 
         user_input: str, 
         conversation_history: Optional[List[Dict[str, str]]] = None,
         long_term_memory_context: Optional[List[str]] = None,
-        fast_mode: bool = False
+        fast_mode: bool = False,
+        *,
+        extra_system_instructions: Optional[str] = None,
     ) -> str:
         """
         Generate an AI response using Ollama with the current personality.
         Enhanced for Hacktober submission with better error handling and performance.
-        
-        Args:
-            user_input: The user's message
-            conversation_history: Recent conversation context
-            long_term_memory_context: Relevant long-term memories
-            fast_mode: Use faster, shorter responses for real-time chat
-            
-        Returns:
-            AI response string
+        Optimized for low-end hardware.
         """
         
         # Check Ollama connection with retry logic
         connection_attempts = 2
         for attempt in range(connection_attempts):
-            if self._check_ollama_connection():
+            if await self._check_ollama_connection():
                 break
             if attempt < connection_attempts - 1:
                 logger.info(f"Ollama connection attempt {attempt + 1} failed, retrying...")
-                import time
-                time.sleep(1)
+                await asyncio.sleep(1)
         else:
             logger.warning("Ollama not available after retries, using fallback response")
             return self._generate_fallback_response(user_input)
         
         # Ensure model is available with better error handling
-        if not self._ensure_model_available():
+        if not await self._ensure_model_available():
             logger.info(f"Model {self.model_name} not found, attempting to pull...")
-            if not self._pull_model_if_needed():
+            if not await self._pull_model_if_needed():
                 logger.warning("Model not available and pull failed, using fallback")
                 return self._generate_fallback_response(user_input)
         
@@ -234,44 +231,43 @@ Keep responses warm, genuine, and adaptive to the student's current emotional an
         context_parts = []
         if long_term_memory_context:
             context_parts.append("Relevant memories from previous conversations:")
-            # Limit memories to prevent token overflow
             relevant_memories = long_term_memory_context[:2] if fast_mode else long_term_memory_context[:3]
             context_parts.extend([f"- {memory}" for memory in relevant_memories])
         
         if conversation_history:
             context_parts.append("\nRecent conversation:")
             history_window = 2 if fast_mode else 4
-            for msg in conversation_history[-history_window:]:  # Last N messages
+            for msg in conversation_history[-history_window:]:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                # Truncate very long messages to prevent token overflow
-                if len(content) > 200:
-                    content = content[:200] + "..."
+                if len(content) > 150: # Shorter limit for low-end
+                    content = content[:150] + "..."
                 context_parts.append(f"{role.title()}: {content}")
         
-        # Construct the full prompt with better structure
         full_prompt = system_prompt
+        if extra_system_instructions:
+            # Extra instructions are appended so they override generic persona guidance.
+            full_prompt += "\n\n" + extra_system_instructions
         if context_parts:
             full_prompt += "\n\nContext:\n" + "\n".join(context_parts)
         full_prompt += f"\n\nStudent: {user_input}\nMyMitra:"
         
         try:
-            # Enhanced request parameters for better performance
-            max_tokens = 150 if fast_mode else 200  # Optimized token limits
-            timeout_seconds = 20 if fast_mode else 35  # Faster timeouts
+            max_tokens = 100 if fast_mode else 150  # Reduced for low-end
+            timeout_seconds = 15 if fast_mode else 30
             
-            response = requests.post(
-                f"{self.base_url}/api/generate",
+            response = await self.client.post(
+                "/api/generate",
                 json={
                     "model": self.model_name,
                     "prompt": full_prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.8,  # Slightly more creative
+                        "temperature": 0.7, # Lower for more predictable/faster
                         "top_p": 0.9,
                         "max_tokens": max_tokens,
                         "stop": ["Student:", "User:", "\n\nStudent:", "\n\nUser:"],
-                        "repeat_penalty": 1.1,  # Reduce repetition
+                        "repeat_penalty": 1.1,
                         "num_predict": max_tokens
                     }
                 },
@@ -282,27 +278,22 @@ Keep responses warm, genuine, and adaptive to the student's current emotional an
                 result = response.json()
                 ai_response = result.get("response", "").strip()
                 
-                # Enhanced response validation
-                if not ai_response or len(ai_response) < 10:
+                if not ai_response or len(ai_response) < 5:
                     logger.warning("Generated response too short, using fallback")
                     return self._generate_fallback_response(user_input)
                 
-                # Enhance with human-like qualities
                 enhanced_response = make_human_like(ai_response, user_input)
-                
-                # Log successful generation for monitoring
                 logger.info(f"Generated {len(enhanced_response)} char response in {self.current_personality.value} mode")
-                
                 return enhanced_response
             else:
-                logger.error(f"Ollama API error: {response.status_code} - {response.text}")
+                logger.error(f"Ollama API error: {response.status_code}")
                 return self._generate_fallback_response(user_input)
                 
-        except requests.exceptions.Timeout:
-            logger.error("Ollama request timed out")
+        except (httpx.TimeoutException, httpx.RequestError) as e:
+            logger.error(f"Ollama request failed: {e}")
             return self._generate_fallback_response(user_input)
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Request to Ollama failed: {e}")
+        except Exception as e:
+            logger.error(f"Unexpected error in generation: {e}")
             return self._generate_fallback_response(user_input)
     
     def _generate_fallback_response(self, user_input: str) -> str:

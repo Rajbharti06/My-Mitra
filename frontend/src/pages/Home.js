@@ -2,7 +2,7 @@ import React from 'react';
 import { Link } from 'react-router-dom';
 
 function Home() {
-  const isAuthed = localStorage.getItem('token') !== null;
+  const isAuthed = localStorage.getItem('access_token') !== null;
   return (
     <div style={{ width: '100%', background: 'linear-gradient(180deg, #f7fbff 0%, #ffffff 100%)' }}>
       <section style={{ maxWidth: 1100, margin: '0 auto', padding: '64px 20px', textAlign: 'center' }}>

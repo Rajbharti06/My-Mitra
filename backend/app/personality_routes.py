@@ -11,14 +11,15 @@ import logging
 from .database import get_db
 from .routes import get_current_user_optional
 from .models import User
-from llm.ollama_model import OllamaMyMitraModel, PersonalityType
+from .enhanced_chat_pipeline import enhanced_chat_pipeline
+from llm.ollama_model import PersonalityType
 
 logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/personality", tags=["personality"])
 
-# Global model instance for personality management
-ollama_model = OllamaMyMitraModel()
+# Use model from enhanced_chat_pipeline
+ollama_model = enhanced_chat_pipeline.model
 
 @router.get("/available", response_model=List[Dict[str, str]])
 async def get_available_personalities():
@@ -215,7 +216,7 @@ async def test_personality_response(
             ollama_model.set_personality(personality_enum)
             
             # Generate test response
-            test_response = ollama_model.generate_response(
+            test_response = await ollama_model.generate_response(
                 test_message,
                 conversation_history=[],
                 long_term_memory_context=[],
