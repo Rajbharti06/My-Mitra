@@ -124,6 +124,48 @@ class ResponseCache(Base):
     )
 
 
+class UserIdentityProfile(Base):
+    """
+    Persistent identity profile for a user.
+    Accumulates behavioral signals across sessions and only promotes a field
+    to "stable" once a pattern has been observed at least twice.
+
+    Identity fields (spec-aligned):
+      user_type        — e.g. "exam-focused overthinker"
+      decision_pattern — e.g. "overthinking" | "hesitation" | "clarity_seeking"
+      energy_cycle     — e.g. "low_evening" | "morning" | "afternoon_focus"
+      core_goal        — e.g. "exam_preparation" | "habit_building" | "self_reflection"
+      core_traits_json — JSON list of stable traits
+    """
+    __tablename__ = "user_identity_profiles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False, unique=True)
+
+    # Stable identity fields (promoted only when pattern count >= 2)
+    user_type = Column(String, nullable=True)
+    decision_pattern = Column(String, nullable=True)
+    energy_cycle = Column(String, nullable=True)
+    core_goal = Column(String, nullable=True)
+    core_traits_json = Column(Text, nullable=True)   # JSON-serialised list[str]
+
+    # Tentative candidates (observed but not yet stable)
+    tentative_decision_pattern = Column(String, nullable=True)
+    tentative_energy_cycle = Column(String, nullable=True)
+    tentative_core_goal = Column(String, nullable=True)
+
+    # Pattern stability counters
+    decision_pattern_count = Column(Integer, default=0)
+    energy_cycle_count = Column(Integer, default=0)
+    core_goal_count = Column(Integer, default=0)
+
+    # Total observation count (incremented every conversation)
+    observation_count = Column(Integer, default=0)
+
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    last_updated = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
 class SystemActionApproval(Base):
     """
     Stores a user-approved system/tool action request.

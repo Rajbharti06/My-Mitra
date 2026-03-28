@@ -25,6 +25,10 @@ from .mitra_core import mitra_core
 
 logger = logging.getLogger(__name__)
 
+# Trait values produced by heuristics as placeholders — not meaningful enough to persist.
+_EPHEMERAL_TRAIT_PLACEHOLDERS: frozenset = frozenset(["seeking_clarity"])
+
+
 class EnhancedChatPipeline:
     """Enhanced chat pipeline with personality, memory, and caching."""
 
@@ -53,6 +57,15 @@ class EnhancedChatPipeline:
         if user_id and db:
             context_messages = self._get_conversation_context(user_id, db, session_id=session_id)
 
+        # Load persisted identity profile (may be None for new users)
+        persisted_identity: Dict[str, Any] = {}
+        if user_id and db:
+            try:
+                raw_profile = crud.get_identity_profile(db, user_id)
+                persisted_identity = crud.identity_profile_to_dict(raw_profile)
+            except Exception as e:
+                logger.warning(f"Could not load identity profile: {e}")
+
         # Defaults (needed for caching path as well).
         depth_level = 1
         use_fast_mode = False
@@ -61,6 +74,7 @@ class EnhancedChatPipeline:
         identity_profile: Dict[str, Any] = {}
         action_suggestions: List[Dict[str, Any]] = []
         extra_system_instructions: Optional[str] = None
+        fused_personalities: Optional[List[str]] = None
 
         # Check cached response path for general FAQs
         normalized_q = self._normalize_question(user_input)
@@ -98,6 +112,7 @@ class EnhancedChatPipeline:
                 user_id=user_id,
                 personality_used=personality_used,
                 memory_context=long_term_context,
+                persisted_identity=persisted_identity,
             )
 
             # Estimate conversation depth and choose fast mode accordingly (keeps latency adaptive).
@@ -143,6 +158,12 @@ class EnhancedChatPipeline:
                     self._maybe_update_memory(user_id, user_input, ai_text, db, identity_profile, intent, emotion)
                 except Exception as e:
                     logger.error(f"Memory update failed: {e}")
+
+                # Update persistent identity profile (pattern-counting, stability threshold).
+                try:
+                    self._update_identity_profile(db, user_id, identity_profile, emotion, intent)
+                except Exception as e:
+                    logger.error(f"Identity profile update failed: {e}")
         except Exception as e:
             logger.error(f"Conversation store failed: {e}")
 
@@ -161,6 +182,7 @@ class EnhancedChatPipeline:
             "action_suggestions": action_suggestions,
             "fused_personalities": fused_personalities,
         }
+
 
     def switch_personality(
         self,
@@ -381,6 +403,57 @@ class EnhancedChatPipeline:
                         memory_category="identity",
                     )
                     crud.update_memory_rate_limit_timestamps(db, user_id, update_preference_at=now)
+
+    def _update_identity_profile(
+        self,
+        db: Session,
+        user_id: int,
+        identity_profile: Dict[str, Any],
+        emotion: Dict[str, Any],
+        intent: str,
+    ) -> None:
+        """
+        Record one observation into the persistent UserIdentityProfile.
+
+        Signal derivation:
+          decision_pattern — from hidden_signal (if present) or emotion → decision_style
+          energy_cycle     — from identity_profile's session energy_pattern
+          core_goal        — from identity_profile's current_phase / core_goal
+          new_traits       — from identity_profile's core_traits (session-level)
+
+        The CRUD layer enforces the stability threshold (pattern must repeat ≥2 times
+        before being promoted to a stable identity field).
+        """
+        # --- decision_pattern ---
+        hidden = emotion.get("hidden_signal")
+        emo = emotion.get("primary_emotion", "neutral")
+        decision_pattern: Optional[str] = None
+        if hidden in ("overthinking", "hesitation", "burnout", "confusion"):
+            decision_pattern = hidden
+        elif identity_profile.get("decision_style") == "hesitant":
+            decision_pattern = "hesitation"
+        elif emo in ("anxious", "stressed"):
+            decision_pattern = "overthinking"
+
+        # --- energy_cycle ---
+        energy_cycle: Optional[str] = identity_profile.get("energy_pattern") or identity_profile.get("energy_cycle")
+
+        # --- core_goal ---
+        core_goal: Optional[str] = identity_profile.get("core_goal") or identity_profile.get("current_phase")
+
+        # --- new_traits ---
+        raw_traits = identity_profile.get("core_traits") or []
+        # Filter out placeholder values that shouldn't be persisted (see _EPHEMERAL_TRAIT_PLACEHOLDERS)
+        new_traits = [t for t in raw_traits if t not in _EPHEMERAL_TRAIT_PLACEHOLDERS]
+
+        crud.observe_identity_signal(
+            db,
+            user_id,
+            decision_pattern=decision_pattern,
+            energy_cycle=energy_cycle,
+            core_goal=core_goal,
+            new_traits=new_traits or None,
+        )
 
     def _normalize_question(self, text: str) -> str:
         """Normalize question text for cache key: lowercase, strip punctuation, collapse spaces."""

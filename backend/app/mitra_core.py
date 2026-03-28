@@ -56,9 +56,13 @@ def detect_emotion_behavior(user_input: str) -> Dict[str, Any]:
 
     # Use .value to get plain strings so downstream comparisons work reliably
     # (str(EmotionCategory.X) returns "EmotionCategory.X" in Python 3.12+).
+    # Guard against None in case the detection result is ever incomplete.
+    primary_str = primary.value if primary is not None and hasattr(primary, "value") else (str(primary) if primary else "neutral")
+    intensity_str = intensity.value if intensity is not None and hasattr(intensity, "value") else (str(intensity) if intensity else "medium")
+
     return {
-        "primary_emotion": primary.value,
-        "primary_intensity": intensity.value,
+        "primary_emotion": primary_str,
+        "primary_intensity": intensity_str,
         "confidence": float(emo.get("confidence", 0.5)),
         "hidden_signal": hidden_signal,
     }
@@ -180,13 +184,19 @@ def derive_identity_profile(
     intent: str,
     emotion: Dict[str, Any],
     memory_context: List[str],
+    persisted: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
-    Lightweight identity extraction (heuristic).
-    Stored as a structured profile via adaptive memory later.
+    Build the per-request identity snapshot used to shape the LLM response.
+
+    Heuristics run first; then *stable* fields from `persisted` (the SQL
+    UserIdentityProfile) override the heuristic where a value exists.  This
+    means the profile "gets smarter" over time without losing session-level
+    awareness.
     """
     text = (user_input or "").lower()
 
+    # --- Heuristic traits (session-level) ---
     core_traits: List[str] = []
     joined = " ".join(memory_context[:8]).lower() if memory_context else ""
 
@@ -215,34 +225,77 @@ def derive_identity_profile(
     if emotion.get("primary_emotion") in ["stressed", "anxious", "sad"] and hour >= 17:
         energy_pattern = "low_evening"
 
-    if intent == "study_request" or intent == "focus_request":
+    if intent in ("study_request", "focus_request"):
         current_phase = "exam_preparation"
-    elif intent in ["journal_request", "emotional_support"]:
+    elif intent in ("journal_request", "emotional_support"):
         current_phase = "self_reflection"
-    elif intent in ["habit_request"]:
+    elif intent == "habit_request":
         current_phase = "habit_formation"
     else:
         current_phase = "general_growth"
 
-    decision_style = "hesitant" if any(k in text for k in ["should i", "what do i do", "not sure", "i can't decide", "maybe", "doubt"]) else "clarity_seeking"
+    decision_style = (
+        "hesitant"
+        if any(k in text for k in ["should i", "what do i do", "not sure", "i can't decide", "maybe", "doubt"])
+        else "clarity_seeking"
+    )
+
+    # --- Merge persisted stable fields (override heuristics where known) ---
+    p = persisted or {}
+    stable_user_type = p.get("user_type")
+    stable_decision_pattern = p.get("decision_pattern") or decision_style
+    stable_energy_cycle = p.get("energy_cycle") or energy_pattern
+    stable_core_goal = p.get("core_goal") or current_phase
+    persisted_traits: List[str] = p.get("core_traits") or []
+
+    # Merge trait lists (persisted first for weight, session heuristics appended)
+    merged_traits = list(dict.fromkeys(persisted_traits + core_traits))[:6]
 
     return {
-        "core_traits": core_traits[:4],
+        # Spec-aligned stable fields
+        "user_type": stable_user_type,
+        "decision_pattern": stable_decision_pattern,
+        "energy_cycle": stable_energy_cycle,
+        "core_goal": stable_core_goal,
+        "core_traits": merged_traits,
+        # Session-level fields (for contextual shaping)
         "current_phase": current_phase,
         "energy_pattern": energy_pattern,
         "decision_style": decision_style,
+        "observation_count": p.get("observation_count", 0),
     }
 
 
 def build_identity_instructions(identity: Dict[str, Any]) -> str:
-    return (
-        "Identity layer (behavioral, inferred): "
-        f"core_traits={identity.get('core_traits')}; "
-        f"current_phase={identity.get('current_phase')}; "
-        f"energy_pattern={identity.get('energy_pattern')}; "
-        f"decision_style={identity.get('decision_style')}. "
-        "Use this to steer tone, structure, and how strongly you push for action."
+    parts = ["Identity layer:"]
+
+    user_type = identity.get("user_type")
+    if user_type:
+        parts.append(f"This user is a '{user_type}'.")
+
+    decision_pattern = identity.get("decision_pattern")
+    if decision_pattern:
+        parts.append(f"Decision pattern: {decision_pattern}.")
+
+    energy_cycle = identity.get("energy_cycle")
+    if energy_cycle:
+        parts.append(f"Energy cycle: {energy_cycle}.")
+
+    core_goal = identity.get("core_goal")
+    if core_goal:
+        parts.append(f"Core goal: {core_goal}.")
+
+    traits = identity.get("core_traits")
+    if traits:
+        parts.append(f"Core traits: {', '.join(str(t) for t in traits)}.")
+
+    parts.append(
+        f"Current session phase: {identity.get('current_phase')}; "
+        f"decision style: {identity.get('decision_style')}. "
+        "Adjust tone, depth, and how assertively you guide based on this profile."
     )
+
+    return " ".join(parts)
 
 
 def _extract_potential_path_tokens(text: str, max_tokens: int = 4) -> List[str]:
@@ -322,16 +375,22 @@ def mitra_core(
     user_id: Optional[int],
     personality_used: str,
     memory_context: List[str],
+    persisted_identity: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Core brain orchestrator. It returns prompt-shaping metadata and action suggestions.
     LLM call still happens in the caller (EnhancedChatPipeline) so we can keep caching/memory storage central.
+
+    `persisted_identity` is the stable UserIdentityProfile loaded from the DB.
+    It is merged with session-level heuristics inside derive_identity_profile().
     """
     intent = detect_intent(user_input)
     emotion = detect_emotion_behavior(user_input)
     mode_label, fast_mode = choose_mode(intent, emotion)
 
-    identity_profile = derive_identity_profile(user_input, intent, emotion, memory_context)
+    identity_profile = derive_identity_profile(
+        user_input, intent, emotion, memory_context, persisted=persisted_identity
+    )
 
     # Personality fusion: blend roles based on emotion + intent (FUSION, NOT SWITCHING).
     fused_personalities = _fuse_personalities(emotion, intent)
@@ -378,4 +437,3 @@ def mitra_core(
         "personality_used": primary_personality,
         "fused_personalities": fused_personalities,
     }
-

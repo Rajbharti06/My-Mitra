@@ -60,6 +60,31 @@ def ensure_db_schema():
                 conn.exec_driver_sql("ALTER TABLE user_settings ADD COLUMN last_preference_memory_at DATETIME NULL")
             if "last_routine_memory_at" not in user_settings_cols:
                 conn.exec_driver_sql("ALTER TABLE user_settings ADD COLUMN last_routine_memory_at DATETIME NULL")
+
+            # Ensure identity profile table and its columns exist (Identity Engine).
+            conn.exec_driver_sql("""
+                CREATE TABLE IF NOT EXISTS user_identity_profiles (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL UNIQUE REFERENCES users(id),
+                    user_type TEXT,
+                    decision_pattern TEXT,
+                    energy_cycle TEXT,
+                    core_goal TEXT,
+                    core_traits_json TEXT,
+                    tentative_decision_pattern TEXT,
+                    tentative_energy_cycle TEXT,
+                    tentative_core_goal TEXT,
+                    decision_pattern_count INTEGER DEFAULT 0,
+                    energy_cycle_count INTEGER DEFAULT 0,
+                    core_goal_count INTEGER DEFAULT 0,
+                    observation_count INTEGER DEFAULT 0,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                    last_updated DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.exec_driver_sql(
+                "CREATE INDEX IF NOT EXISTS idx_user_identity_profiles_user_id ON user_identity_profiles(user_id)"
+            )
     except Exception as e:
         logger.warning(f"Schema check failed: {e}")
 

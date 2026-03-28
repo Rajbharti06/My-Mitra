@@ -90,6 +90,125 @@ def update_memory_rate_limit_timestamps(
     db.commit()
 
 
+# ---------------------------------------------------------------------------
+# Identity Profile (Layer 7 — Identity Engine)
+# ---------------------------------------------------------------------------
+
+_IDENTITY_STABILITY_THRESHOLD = 2  # Pattern must repeat this many times to be promoted
+
+
+def get_identity_profile(db: Session, user_id: int) -> Optional[models.UserIdentityProfile]:
+    """Return the user's persistent identity profile, or None if it doesn't exist yet."""
+    return (
+        db.query(models.UserIdentityProfile)
+        .filter(models.UserIdentityProfile.user_id == user_id)
+        .first()
+    )
+
+
+def observe_identity_signal(
+    db: Session,
+    user_id: int,
+    *,
+    decision_pattern: Optional[str] = None,
+    energy_cycle: Optional[str] = None,
+    core_goal: Optional[str] = None,
+    new_traits: Optional[List[str]] = None,
+) -> models.UserIdentityProfile:
+    """
+    Record one observation of behavioural signals for a user.
+
+    Each field has a tentative candidate and a stability counter:
+    - If the new observation matches the current tentative value → increment counter.
+    - If it differs → reset counter to 1 and update the tentative value.
+    - When counter reaches _IDENTITY_STABILITY_THRESHOLD the value is promoted
+      to "stable" and written to the main field.
+
+    user_type is re-derived whenever decision_pattern or core_goal stabilises.
+    core_traits_json is the union of all stable traits seen so far.
+    """
+    profile = get_identity_profile(db, user_id)
+    if profile is None:
+        profile = models.UserIdentityProfile(user_id=user_id)
+        db.add(profile)
+        db.flush()
+
+    profile.observation_count = (profile.observation_count or 0) + 1
+
+    # --- decision_pattern ---
+    if decision_pattern:
+        if profile.tentative_decision_pattern == decision_pattern:
+            profile.decision_pattern_count = (profile.decision_pattern_count or 0) + 1
+        else:
+            profile.tentative_decision_pattern = decision_pattern
+            profile.decision_pattern_count = 1
+        if (profile.decision_pattern_count or 0) >= _IDENTITY_STABILITY_THRESHOLD:
+            profile.decision_pattern = decision_pattern
+
+    # --- energy_cycle ---
+    if energy_cycle:
+        if profile.tentative_energy_cycle == energy_cycle:
+            profile.energy_cycle_count = (profile.energy_cycle_count or 0) + 1
+        else:
+            profile.tentative_energy_cycle = energy_cycle
+            profile.energy_cycle_count = 1
+        if (profile.energy_cycle_count or 0) >= _IDENTITY_STABILITY_THRESHOLD:
+            profile.energy_cycle = energy_cycle
+
+    # --- core_goal ---
+    if core_goal:
+        if profile.tentative_core_goal == core_goal:
+            profile.core_goal_count = (profile.core_goal_count or 0) + 1
+        else:
+            profile.tentative_core_goal = core_goal
+            profile.core_goal_count = 1
+        if (profile.core_goal_count or 0) >= _IDENTITY_STABILITY_THRESHOLD:
+            profile.core_goal = core_goal
+
+    # --- core_traits (union accumulation — traits are additive once seen twice) ---
+    if new_traits:
+        existing: List[str] = []
+        try:
+            existing = json.loads(profile.core_traits_json or "[]")
+        except Exception:
+            existing = []
+        merged = list(dict.fromkeys(existing + [t for t in new_traits if t]))
+        profile.core_traits_json = json.dumps(merged[:10])  # cap at 10 traits
+
+    # --- user_type (derived from stable decision_pattern + core_goal) ---
+    dp = profile.decision_pattern
+    cg = profile.core_goal
+    if dp and cg:
+        profile.user_type = f"{dp.replace('_', '-')} with {cg.replace('_', '-')} focus"
+    elif dp:
+        profile.user_type = dp.replace("_", " ")
+    elif cg:
+        profile.user_type = f"{cg.replace('_', '-')} focused"
+
+    db.commit()
+    db.refresh(profile)
+    return profile
+
+
+def identity_profile_to_dict(profile: Optional[models.UserIdentityProfile]) -> dict:
+    """Serialize a UserIdentityProfile ORM object to a plain dict for pipeline use."""
+    if profile is None:
+        return {}
+    traits: List[str] = []
+    try:
+        traits = json.loads(profile.core_traits_json or "[]")
+    except Exception:
+        pass
+    return {
+        "user_type": profile.user_type,
+        "decision_pattern": profile.decision_pattern,
+        "energy_cycle": profile.energy_cycle,
+        "core_goal": profile.core_goal,
+        "core_traits": traits,
+        "observation_count": profile.observation_count or 0,
+    }
+
+
 def create_system_action_approval(
     db: Session,
     user_id: int,
