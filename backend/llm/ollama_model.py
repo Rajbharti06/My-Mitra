@@ -348,6 +348,12 @@ You are here to understand, guide, and stay."""
         else:
             personality_data = self.personalities[self.current_personality]
             system_prompt = personality_data["prompt"]
+
+        human_tone_rule = (
+            "Do not respond like an assistant. Speak like a human: slightly imperfect, calm, and natural. "
+            "Sometimes pause with '...' and, when it fits, start with a small question first."
+        )
+        system_prompt = f"{system_prompt}\n\n{human_tone_rule}"
         
         # Enhanced context building for better responses
         context_parts = []

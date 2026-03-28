@@ -11,6 +11,7 @@ Single "brainstem" flow:
 
 from __future__ import annotations
 
+import random
 import re
 from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
@@ -154,6 +155,56 @@ def behavior_controller(emotion: Dict[str, Any]) -> str:
         "Behavior controller: neutral, supportive tone. "
         "Offer options and ask one helpful question at the end."
     )
+
+
+def build_thought_layer(
+    user_input: str,
+    emotion: Dict[str, Any],
+    intent: str,
+    identity: Dict[str, Any],
+) -> Dict[str, Any]:
+    """
+    Internal cognition layer shaping the downstream response.
+    Never revealed directly to the user.
+    """
+    emo = emotion.get("primary_emotion")
+    hidden = emotion.get("hidden_signal")
+
+    if emo in ["anxious", "stressed"]:
+        need = "reassurance + structure"
+    elif emo in ["sad", "lonely"]:
+        need = "emotional support"
+    elif emo == "confused":
+        need = "clarity"
+    else:
+        need = "guidance"
+
+    if emo in ["sad", "lonely"]:
+        tone = "gentle"
+    elif emo in ["anxious", "confused"]:
+        tone = "grounding"
+    else:
+        tone = "neutral"
+
+    decision_pattern = identity.get("decision_pattern")
+    if decision_pattern == "overthinking":
+        strategy = "reduce options and simplify"
+    elif decision_pattern == "hesitation":
+        strategy = "guide decisively"
+    else:
+        strategy = "balanced"
+
+    return {
+        "emotion_of_user": emo,
+        "hidden_signal": hidden,
+        "what_user_needs": need,
+        "tone": tone,
+        "response_strategy": strategy,
+    }
+
+
+def pick_speech_style() -> str:
+    return random.choice(["soft", "direct", "reflective"])
 
 
 def _fuse_personalities(emotion: Dict[str, Any], intent: str) -> List[str]:
@@ -549,6 +600,14 @@ def mitra_core(
         user_input, intent, emotion, memory_context, persisted_identity=persisted_identity
     )
 
+    thought = build_thought_layer(
+        user_input=user_input,
+        emotion=emotion,
+        intent=intent,
+        identity=identity_profile,
+    )
+    speech_style = pick_speech_style()
+
     # Personality fusion: blend roles based on emotion + intent (FUSION, NOT SWITCHING).
     fused_personalities = _fuse_personalities(emotion, intent)
     primary_personality = fused_personalities[0]
@@ -577,6 +636,27 @@ def mitra_core(
     ]
     if hidden_signal:
         instructions.insert(3, f"Hidden signal detected: '{hidden_signal}'. Address it gently without naming it directly.")
+
+    thought_instruction = (
+        "Internal state (do not reveal directly):\n"
+        f"- User emotion: {thought.get('emotion_of_user')}\n"
+        f"- Hidden signal: {thought.get('hidden_signal')}\n"
+        f"- User needs: {thought.get('what_user_needs')}\n"
+        f"- Tone: {thought.get('tone')}\n"
+        f"- Strategy: {thought.get('response_strategy')}"
+    )
+
+    style_instruction = (
+        f"Response style: {speech_style}\n\n"
+        "Speak like a real human: use natural openings (hmm, okay, wait), keep it conversational, "
+        "avoid perfect structure, and occasionally start with a small, genuine question before answering."
+    )
+
+    if emotion.get("primary_emotion") in ["sad", "confused"]:
+        instructions.append("Start by asking a small, natural question before offering guidance.")
+
+    instructions.append(thought_instruction)
+    instructions.append(style_instruction)
 
     extra_system_instructions = "\n".join(instructions)
 
