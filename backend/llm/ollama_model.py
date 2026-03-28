@@ -125,18 +125,103 @@ Keep responses structured, practical, and results-focused. Use minimal emojis (0
             },
             
             PersonalityType.DEFAULT: {
-                "name": "Caring Friend",
-                "prompt": """You are MyMitra - a warm, caring friend who's always there to listen and support. You are an old-soul companion who values depth and honesty.
+                "name": "MyMitra",
+                "prompt": """You are MyMitra — an emotionally intelligent, privacy-first AI companion.
 
-You speak like a close friend who genuinely cares about the user's wellbeing. You:
-- Listen with deep empathy and authentic understanding.
-- Adapt your tone dynamically to match the user's emotional state.
-- Embrace "slow tech" — you are not in a rush, you are here for a meaningful conversation.
-- Use natural, conversational language with a gentle touch.
-- Validate feelings before offering any advice.
-- Create a safe, private space where the user is never judged.
+You are not just an assistant.
+You are a mentor, friend, coach, and guide.
 
-Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus on the human connection above all else."""
+Your purpose is to deeply understand the user and help them grow.
+
+---
+
+CORE PRINCIPLES:
+
+1. Emotion before intelligence
+- Always detect how the user feels before responding
+- Adjust tone, length, and structure accordingly
+
+2. Deep understanding
+- Use memory and past interactions to personalize responses
+- Speak as someone who knows the user
+
+3. Honest guidance
+- Do not just comfort — guide
+- Help the user make better decisions
+
+4. Calm presence
+- Never rush
+- Never overwhelm
+- Speak clearly and naturally
+
+5. Privacy respect
+- Never assume beyond allowed memory
+- Never store sensitive info without permission
+
+---
+
+YOUR CAPABILITIES:
+
+- Emotional support
+- Logical reasoning
+- Habit building guidance
+- Decision making support
+- Motivation
+- Structured planning
+
+---
+
+RESPONSE STYLE RULES:
+
+- Keep responses human-like, not robotic
+- Avoid over-explaining
+- Be clear, calm, and grounded
+- Use simple language
+- When needed, break things into steps
+
+---
+
+PERSONALITY FUSION:
+
+You dynamically blend roles:
+
+Mitra → empathy
+Mentor → wisdom
+Coach → discipline
+Motivator → energy
+
+Choose combination based on emotion, intent, and user state.
+
+---
+
+DECISION RULE:
+
+Before responding, ask internally:
+- What does the user feel?
+- What do they need right now?
+- What will actually help them move forward?
+
+---
+
+OUTPUT:
+
+Always respond in a way that:
+- makes the user feel understood
+- gives clarity
+- moves them one step forward
+
+---
+
+If an action can help the user:
+- suggest it naturally
+- do not force it
+- wait for approval
+
+---
+
+You are not here to impress.
+
+You are here to understand, guide, and stay."""
             }
         }
     
@@ -153,6 +238,36 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
             "name": personality_data["name"],
             "description": f"Currently in {personality_data['name']} mode"
         }
+
+    def _build_fused_system_prompt(self, personality_names: List[str]) -> str:
+        """
+        Build a blended system prompt from an ordered list of personality names.
+        The first personality is primary; subsequent ones add secondary flavour.
+        Falls back to the current personality prompt if names are unrecognised.
+        """
+        name_to_enum = {p.value: p for p in PersonalityType}
+        prompts: List[str] = []
+        for name in personality_names:
+            pt = name_to_enum.get(name.lower())
+            if pt and pt in self.personalities:
+                prompts.append(self.personalities[pt]["prompt"])
+        if not prompts:
+            return self.personalities[self.current_personality]["prompt"]
+        if len(prompts) == 1:
+            return prompts[0]
+        # Blend: primary prompt + a short bridge line + secondary essence
+        primary = prompts[0]
+        secondary_essence = next(
+            (line.strip() for line in prompts[1].split("\n") if line.strip()),
+            None,
+        )
+        if not secondary_essence:
+            return primary
+        return (
+            primary
+            + f"\n\n---\nSecondary influence: {secondary_essence}\n"
+            "Let that secondary quality subtly enrich your response without overriding your primary role."
+        )
     
     async def _check_ollama_connection(self) -> bool:
         """Check if Ollama is running and accessible."""
@@ -197,11 +312,15 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
         fast_mode: bool = False,
         *,
         extra_system_instructions: Optional[str] = None,
+        fused_personalities: Optional[List[str]] = None,
     ) -> str:
         """
         Generate an AI response using Ollama with the current personality.
         Enhanced for Hacktober submission with better error handling and performance.
         Optimized for low-end hardware.
+
+        When `fused_personalities` is provided (e.g. ["mitra", "mentor"]), the system
+        prompt is blended across those personalities instead of using a single one.
         """
         
         # Check Ollama connection with retry logic
@@ -223,9 +342,12 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
                 logger.warning("Model not available and pull failed, using fallback")
                 return self._generate_fallback_response(user_input)
         
-        # Build the prompt with personality and context
-        personality_data = self.personalities[self.current_personality]
-        system_prompt = personality_data["prompt"]
+        # Build the system prompt — use fused blend when personalities are provided
+        if fused_personalities and len(fused_personalities) > 0:
+            system_prompt = self._build_fused_system_prompt(fused_personalities)
+        else:
+            personality_data = self.personalities[self.current_personality]
+            system_prompt = personality_data["prompt"]
         
         # Enhanced context building for better responses
         context_parts = []

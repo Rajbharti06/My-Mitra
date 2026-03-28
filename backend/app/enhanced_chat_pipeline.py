@@ -108,6 +108,7 @@ class EnhancedChatPipeline:
             identity_profile = core.get("identity_profile", {})
             action_suggestions = core.get("action_suggestions", [])
             extra_system_instructions = core.get("extra_system_instructions")
+            fused_personalities = core.get("fused_personalities")
 
             # Generate response via model with conversation and memory context
             ai_text = await self.model.generate_response(
@@ -116,6 +117,7 @@ class EnhancedChatPipeline:
                 long_term_memory_context=long_term_context,
                 fast_mode=use_fast_mode,
                 extra_system_instructions=extra_system_instructions,
+                fused_personalities=fused_personalities,
             )
             memory_used = bool(context_messages or long_term_context)
 
@@ -157,6 +159,7 @@ class EnhancedChatPipeline:
             "emotion": emotion,
             "identity_profile": identity_profile,
             "action_suggestions": action_suggestions,
+            "fused_personalities": fused_personalities,
         }
 
     def switch_personality(

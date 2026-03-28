@@ -49,6 +49,8 @@ class EmotionCategory(str, Enum):
     CONFUSED = "confused"
     NEUTRAL = "neutral"
     MOTIVATED = "motivated"
+    NUMB = "numb"
+    LONELY = "lonely"
 
 class EmotionIntensity(str, Enum):
     """Intensity levels for detected emotions"""
@@ -211,7 +213,59 @@ class EmotionEngine:
                     EmotionIntensity.MEDIUM: [],  # Default
                     EmotionIntensity.LOW: []
                 }
-            }
+            },
+            EmotionCategory.NUMB: {
+                'keywords': [
+                    r'\bnumb\b', r'\bhollow\b', r'\bempty inside\b', r'\bvoid\b', r'\bdetached\b',
+                    r'\bdisconnected\b', r'\bblank\b', r'\bfeel nothing\b', r'\bdon\'t feel anything\b',
+                    r'\bgoing through the motions\b', r'\bjust existing\b', r'\bcan\'t feel\b'
+                ],
+                'intensity_modifiers': {
+                    EmotionIntensity.HIGH: [r'\bcompletely\b', r'\btotally\b', r'\babsolutely\b'],
+                    EmotionIntensity.MEDIUM: [],
+                    EmotionIntensity.LOW: [r'\ba bit\b', r'\bslightly\b', r'\bsomewhat\b']
+                }
+            },
+            EmotionCategory.LONELY: {
+                'keywords': [
+                    r'\blonely\b', r'\balone\b', r'\bisolated\b', r'\bno one\b', r'\bby myself\b',
+                    r'\bno friends\b', r'\bno one cares\b', r'\bno one understands\b', r'\bfeel unseen\b',
+                    r'\binvisible\b', r'\bforgotten\b', r'\babandoned\b', r'\bexcluded\b'
+                ],
+                'intensity_modifiers': {
+                    EmotionIntensity.HIGH: [r'\bso\b', r'\bvery\b', r'\bextremely\b', r'\bcompletely\b'],
+                    EmotionIntensity.MEDIUM: [],
+                    EmotionIntensity.LOW: [r'\ba bit\b', r'\bslightly\b', r'\bsomewhat\b', r'\ba little\b']
+                }
+            },
+        }
+
+        # Hidden signal patterns: subtle emotional states not always explicitly named
+        self.hidden_signal_patterns: Dict[str, List[re.Pattern]] = {
+            "overthinking": [
+                re.compile(p, re.IGNORECASE) for p in [
+                    r'\bwhat if\b', r'\bbut what if\b', r'\bover.?think', r'\bcan\'t stop thinking\b',
+                    r'\bthinking too much\b', r'\brain won\'t stop\b', r'\bkeep thinking about\b',
+                ]
+            ],
+            "hesitation": [
+                re.compile(p, re.IGNORECASE) for p in [
+                    r'\bi don\'t know\b', r'\bnot sure\b', r'\bmaybe\b', r'\bshould i\b',
+                    r'\bi can\'t decide\b', r'\bwhat do i do\b', r'\bdon\'t know what to do\b',
+                ]
+            ],
+            "burnout": [
+                re.compile(p, re.IGNORECASE) for p in [
+                    r'\bburnt? out\b', r'\bexhausted\b', r'\bdrained\b', r'\btired of everything\b',
+                    r'\bcan\'t anymore\b', r'\bgive up\b', r'\bno energy\b', r'\bno motivation\b',
+                ]
+            ],
+            "confusion": [
+                re.compile(p, re.IGNORECASE) for p in [
+                    r'\bdon\'t understand\b', r'\bmakes no sense\b', r'\blost track\b',
+                    r'\bwhere do i even start\b', r'\bso much going on\b', r'\bcan\'t figure out\b',
+                ]
+            ],
         }
         
         # Compile all patterns for faster matching
@@ -235,6 +289,7 @@ class EmotionEngine:
             'primary_intensity': EmotionIntensity.MEDIUM,
             'confidence': 0.5,  # Default medium confidence
             'all_emotions': {},
+            'hidden_signal': None,
             'sentiment': {
                 'polarity': 0,  # -1 to 1
                 'subjectivity': 0  # 0 to 1
@@ -268,6 +323,25 @@ class EmotionEngine:
         
         return results
     
+    def _detect_hidden_signals(self, text: str) -> Optional[str]:
+        """
+        Detect subtle hidden emotional signals not explicitly named by the user.
+
+        Signals checked (in priority order):
+          - overthinking: recursive "what if" loops, can't stop thinking
+          - burnout: exhaustion, no motivation, giving up
+          - hesitation: indecision, "should I", "not sure"
+          - confusion: lost direction, can't figure out where to start
+
+        Returns the first matched signal name, or None if no signal detected.
+        """
+        text_lower = text.lower()
+        for signal, patterns in self.hidden_signal_patterns.items():
+            for pattern in patterns:
+                if pattern.search(text_lower):
+                    return signal
+        return None
+
     def _rule_based_detection(self, text: str) -> Dict:
         """
         Detect emotions using rule-based keyword matching
@@ -282,7 +356,8 @@ class EmotionEngine:
             'primary_emotion': EmotionCategory.NEUTRAL,
             'primary_intensity': EmotionIntensity.MEDIUM,
             'confidence': 0.5,
-            'all_emotions': {}
+            'all_emotions': {},
+            'hidden_signal': self._detect_hidden_signals(text),
         }
         
         # Check for each emotion

@@ -52,11 +52,15 @@ def detect_emotion_behavior(user_input: str) -> Dict[str, Any]:
     emo = emotion_engine._rule_based_detection(user_input)
     primary = emo.get("primary_emotion")
     intensity = emo.get("primary_intensity")
+    hidden_signal = emo.get("hidden_signal")
 
+    # Use .value to get plain strings so downstream comparisons work reliably
+    # (str(EmotionCategory.X) returns "EmotionCategory.X" in Python 3.12+).
     return {
-        "primary_emotion": str(primary),
-        "primary_intensity": str(intensity),
+        "primary_emotion": primary.value,
+        "primary_intensity": intensity.value,
         "confidence": float(emo.get("confidence", 0.5)),
+        "hidden_signal": hidden_signal,
     }
 
 
@@ -67,13 +71,14 @@ def choose_mode(intent: str, emotion: Dict[str, Any]) -> Tuple[str, bool]:
       fast_mode: bool
     """
     intensity = emotion.get("primary_intensity", "medium")
+    emo = emotion.get("primary_emotion")
 
     if intent in ["file_list_request", "file_read_request", "file_delete_request", "chat_retention_request"]:
         # Usually quick + concrete.
         return ("fast", True)
 
     # Emotional intensity -> slow down for grounding.
-    if intensity == "high" or emotion.get("primary_emotion") in ["anxious", "stressed", "sad"]:
+    if intensity == "high" or emo in ["anxious", "stressed", "sad", "numb", "lonely"]:
         return ("deliberate", False)
 
     return ("fast" if intent in ["focus_request", "study_request", "habit_request"] else "deliberate",
@@ -121,10 +126,53 @@ def behavior_controller(emotion: Dict[str, Any]) -> str:
             "Behavior controller: match the energy. Provide a clear plan with a quick win first. "
             "Use confident language."
         )
+    if emo == "numb":
+        return (
+            "Behavior controller: be gentle and activating. "
+            "Acknowledge the emptiness without judgment. "
+            "Offer one tiny, low-effort action to re-engage — no pressure, no rush. "
+            "Use warm, grounding language that creates presence without forcing energy."
+        )
+    if emo == "lonely":
+        return (
+            "Behavior controller: be warm and connecting. "
+            "Make the user feel genuinely seen and not alone in this moment. "
+            "Avoid generic platitudes. Offer real presence + one small social or self-connection action."
+        )
     return (
         "Behavior controller: neutral, supportive tone. "
         "Offer options and ask one helpful question at the end."
     )
+
+
+def _fuse_personalities(emotion: Dict[str, Any], intent: str) -> List[str]:
+    """
+    Determine which personalities to blend based on emotion and intent.
+    Returns a list of 1–2 personality names (primary first).
+
+    Fusion rules (spec: "FUSION, NOT SWITCHING"):
+      sad / numb / lonely          → mitra + mentor  (empathy + wisdom)
+      goal-related intents         → coach + mentor   (discipline + guidance)
+      low-energy (stressed/burnout)→ motivator + mitra (activation + warmth)
+      anxious                      → mitra + coach    (grounding + structure)
+      motivated                    → motivator + coach (energy + direction)
+      default                      → mitra alone
+    """
+    emo = emotion.get("primary_emotion", "neutral")
+    hidden = emotion.get("hidden_signal")
+    goal_intents = {"study_request", "focus_request", "habit_request", "journal_request"}
+
+    if emo in ("sad", "numb", "lonely"):
+        return ["mitra", "mentor"]
+    if intent in goal_intents:
+        return ["coach", "mentor"]
+    if emo in ("stressed",) or hidden == "burnout":
+        return ["motivator", "mitra"]
+    if emo == "anxious":
+        return ["mitra", "coach"]
+    if emo == "motivated":
+        return ["motivator", "coach"]
+    return ["mitra"]
 
 
 def derive_identity_profile(
@@ -285,18 +333,36 @@ def mitra_core(
 
     identity_profile = derive_identity_profile(user_input, intent, emotion, memory_context)
 
-    # Fuse emotion -> behavior -> identity into deterministic extra instructions.
-    fusion_instruction = (
-        "Personality fusion: keep Mitra-style empathy while also matching the intent: "
-        f"intent={intent}. Provide actionable guidance with calm confidence."
-    )
+    # Personality fusion: blend roles based on emotion + intent (FUSION, NOT SWITCHING).
+    fused_personalities = _fuse_personalities(emotion, intent)
+    primary_personality = fused_personalities[0]
+    secondary_personality = fused_personalities[1] if len(fused_personalities) > 1 else None
 
-    extra_system_instructions = "\n".join([
+    if secondary_personality:
+        fusion_instruction = (
+            f"Personality fusion: blend {primary_personality.upper()} (primary) "
+            f"with {secondary_personality.upper()} (secondary). "
+            f"Lead with {primary_personality} qualities, enrich with {secondary_personality} wisdom. "
+            f"Intent is '{intent}'. Provide guidance that feels both human and actionable."
+        )
+    else:
+        fusion_instruction = (
+            f"Personality fusion: respond as {primary_personality.upper()} — "
+            "warm, empathetic, and grounding."
+        )
+
+    hidden_signal = emotion.get("hidden_signal")
+
+    instructions = [
         build_identity_instructions(identity_profile),
         behavior_controller(emotion),
         fusion_instruction,
         "Safety: never claim you executed an action. If you propose any action, return it as a suggestion requiring user approval.",
-    ])
+    ]
+    if hidden_signal:
+        instructions.insert(3, f"Hidden signal detected: '{hidden_signal}'. Address it gently without naming it directly.")
+
+    extra_system_instructions = "\n".join(instructions)
 
     action_suggestions = decide_action_suggestions(intent, user_input)
 
@@ -308,7 +374,8 @@ def mitra_core(
         "identity_profile": identity_profile,
         "extra_system_instructions": extra_system_instructions,
         "action_suggestions": action_suggestions,
-        # personality fusion currently uses prompt shaping; runtime personality remains primary.
-        "personality_used": personality_used,
+        # fused_personalities drives prompt blending in the LLM layer.
+        "personality_used": primary_personality,
+        "fused_personalities": fused_personalities,
     }
 
