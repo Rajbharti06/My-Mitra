@@ -465,41 +465,57 @@ def build_reflection_hint(identity: Dict[str, Any]) -> Optional[str]:
     return hint
 
 
-def build_identity_instructions(identity: Dict[str, Any]) -> str:
+def build_identity_instructions(identity: Dict[str, Any], allow_reflection: bool = True) -> str:
+    """
+    Build identity instructions, keeping only high-confidence signals.
+    Reflection can be disabled when confidence is low to avoid overreaching.
+    """
     parts = ["Identity layer:"]
+    confidence = identity.get("confidence") or {}
+
+    def _conf_ok(key: str) -> bool:
+        # Only include fields with confidence >= 0.6 when confidence is tracked.
+        if key in confidence:
+            try:
+                return float(confidence.get(key, 0.0)) >= 0.6
+            except (TypeError, ValueError):
+                return False
+        return True
 
     user_type = identity.get("user_type")
-    if user_type:
+    if user_type and _conf_ok("user_type"):
         parts.append(f"This user is a '{user_type}'.")
 
     decision_pattern = identity.get("decision_pattern")
-    if decision_pattern:
+    if decision_pattern and _conf_ok("decision_pattern"):
         parts.append(f"Decision pattern: {decision_pattern}.")
 
     energy_cycle = identity.get("energy_cycle")
-    if energy_cycle:
+    if energy_cycle and _conf_ok("energy_cycle"):
         parts.append(f"Energy cycle: {energy_cycle}.")
 
     core_goal = identity.get("core_goal")
-    if core_goal:
+    if core_goal and _conf_ok("core_goal"):
         parts.append(f"Core goal: {core_goal}.")
 
     traits = identity.get("core_traits")
-    if traits:
+    if traits and _conf_ok("core_traits"):
         parts.append(f"Core traits: {', '.join(str(t) for t in traits)}.")
 
-    parts.append(
-        f"Current session phase: {identity.get('current_phase')}; "
-        f"decision style: {identity.get('decision_style')}. "
-        "Adjust tone, depth, and how assertively you guide based on this profile."
-    )
+    current_phase = identity.get("current_phase")
+    decision_style = identity.get("decision_style")
+    if (current_phase or decision_style) and _conf_ok("current_phase") and _conf_ok("decision_style"):
+        parts.append(
+            f"Current session phase: {current_phase}; decision style: {decision_style}. "
+            "Adjust tone, depth, and how assertively you guide based on this profile."
+        )
 
     # Append Decision Bias and Reflection Hint sections when available.
-    bias = build_decision_bias(identity)
+    bias = build_decision_bias(identity) if _conf_ok("decision_pattern") else None
     if bias:
         parts.append(bias)
 
-    reflection = build_reflection_hint(identity)
+    reflection = build_reflection_hint(identity) if allow_reflection else None
     if reflection:
         parts.append(reflection)
 
@@ -607,35 +623,20 @@ def mitra_core(
         identity=identity_profile,
     )
     speech_style = pick_speech_style()
-
-    # Personality fusion: blend roles based on emotion + intent (FUSION, NOT SWITCHING).
+    length_pref = "short" if emotion.get("primary_emotion") in ["sad", "anxious"] else "medium"
     fused_personalities = _fuse_personalities(emotion, intent)
     primary_personality = fused_personalities[0]
-    secondary_personality = fused_personalities[1] if len(fused_personalities) > 1 else None
 
-    if secondary_personality:
-        fusion_instruction = (
-            f"Personality fusion: blend {primary_personality.upper()} (primary) "
-            f"with {secondary_personality.upper()} (secondary). "
-            f"Lead with {primary_personality} qualities, enrich with {secondary_personality} wisdom. "
-            f"Intent is '{intent}'. Provide guidance that feels both human and actionable."
-        )
-    else:
-        fusion_instruction = (
-            f"Personality fusion: respond as {primary_personality.upper()} — "
-            "warm, empathetic, and grounding."
-        )
-
-    hidden_signal = emotion.get("hidden_signal")
+    # Limit identity reflection when confidence is low.
+    confidence = identity_profile.get("confidence") or {}
+    max_conf = max(confidence.values()) if confidence else 1.0
+    allow_reflection = max_conf >= 0.6
 
     instructions = [
-        build_identity_instructions(identity_profile),
+        build_identity_instructions(identity_profile, allow_reflection=allow_reflection),
         behavior_controller(emotion),
-        fusion_instruction,
         "Safety: never claim you executed an action. If you propose any action, return it as a suggestion requiring user approval.",
     ]
-    if hidden_signal:
-        instructions.insert(3, f"Hidden signal detected: '{hidden_signal}'. Address it gently without naming it directly.")
 
     thought_instruction = (
         "Internal state (do not reveal directly):\n"
@@ -652,11 +653,14 @@ def mitra_core(
         "avoid perfect structure, and occasionally start with a small, genuine question before answering."
     )
 
+    length_instruction = f"Keep response {length_pref}. Avoid long explanations."
+
     if emotion.get("primary_emotion") in ["sad", "confused"]:
         instructions.append("Start by asking a small, natural question before offering guidance.")
 
     instructions.append(thought_instruction)
     instructions.append(style_instruction)
+    instructions.append(length_instruction)
 
     extra_system_instructions = "\n".join(instructions)
 
