@@ -159,6 +159,12 @@ class UserIdentityProfile(Base):
     energy_cycle_count = Column(Integer, default=0)
     core_goal_count = Column(Integer, default=0)
 
+    # Confidence scores (0.0 – 1.0) — rise on confirmation, fall on contradiction.
+    # Allow evolution: a user can change and the profile adapts gracefully.
+    decision_pattern_confidence = Column(Float, default=0.0)
+    energy_cycle_confidence = Column(Float, default=0.0)
+    core_goal_confidence = Column(Float, default=0.0)
+
     # Total observation count (incremented every conversation)
     observation_count = Column(Integer, default=0)
 

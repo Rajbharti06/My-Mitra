@@ -85,6 +85,24 @@ def ensure_db_schema():
             conn.exec_driver_sql(
                 "CREATE INDEX IF NOT EXISTS idx_user_identity_profiles_user_id ON user_identity_profiles(user_id)"
             )
+            # Add confidence columns for existing tables (safe with TRY/EXCEPT on OperationalError).
+            identity_cols = [
+                row[1] for row in conn.exec_driver_sql(
+                    "PRAGMA table_info(user_identity_profiles)"
+                ).fetchall()
+            ]
+            if "decision_pattern_confidence" not in identity_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE user_identity_profiles ADD COLUMN decision_pattern_confidence REAL DEFAULT 0.0"
+                )
+            if "energy_cycle_confidence" not in identity_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE user_identity_profiles ADD COLUMN energy_cycle_confidence REAL DEFAULT 0.0"
+                )
+            if "core_goal_confidence" not in identity_cols:
+                conn.exec_driver_sql(
+                    "ALTER TABLE user_identity_profiles ADD COLUMN core_goal_confidence REAL DEFAULT 0.0"
+                )
     except Exception as e:
         logger.warning(f"Schema check failed: {e}")
 

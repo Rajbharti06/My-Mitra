@@ -47,24 +47,29 @@ def detect_intent(user_input: str) -> str:
     return "general_support"
 
 
+def _enum_value(val: Any, fallback: str) -> str:
+    """Safely extract a plain string from an enum value or fallback to the given default."""
+    if val is None:
+        return fallback
+    if hasattr(val, "value"):
+        return val.value
+    return str(val)
+
+
 def detect_emotion_behavior(user_input: str) -> Dict[str, Any]:
     # Lightweight emotion detection: rule-based only.
     emo = emotion_engine._rule_based_detection(user_input)
-    primary = emo.get("primary_emotion")
-    intensity = emo.get("primary_intensity")
-    hidden_signal = emo.get("hidden_signal")
 
-    # Use .value to get plain strings so downstream comparisons work reliably
+    # Use _enum_value to get plain strings so downstream comparisons work reliably
     # (str(EmotionCategory.X) returns "EmotionCategory.X" in Python 3.12+).
-    # Guard against None in case the detection result is ever incomplete.
-    primary_str = primary.value if primary is not None and hasattr(primary, "value") else (str(primary) if primary else "neutral")
-    intensity_str = intensity.value if intensity is not None and hasattr(intensity, "value") else (str(intensity) if intensity else "medium")
+    primary_str = _enum_value(emo.get("primary_emotion"), "neutral")
+    intensity_str = _enum_value(emo.get("primary_intensity"), "medium")
 
     return {
         "primary_emotion": primary_str,
         "primary_intensity": intensity_str,
         "confidence": float(emo.get("confidence", 0.5)),
-        "hidden_signal": hidden_signal,
+        "hidden_signal": emo.get("hidden_signal"),
     }
 
 
@@ -266,6 +271,146 @@ def derive_identity_profile(
     }
 
 
+def build_decision_bias(identity: Dict[str, Any]) -> Optional[str]:
+    """
+    Map stable identity fields to concrete LLM response-style directives.
+
+    This is the Decision Bias Layer — identity doesn't just personalise tone,
+    it actively changes how the AI structures and delivers guidance.
+
+    Only emits directives for fields that have a confidence score >= 0.4,
+    so the AI doesn't over-steer on weak or tentative signals.
+    """
+    confidence = identity.get("confidence") or {}
+    directives: List[str] = []
+
+    decision_pattern = identity.get("decision_pattern")
+    dp_conf = confidence.get("decision_pattern", 0.0)
+    if decision_pattern and dp_conf >= 0.4:
+        if decision_pattern == "overthinking":
+            directives.append(
+                "Decision bias (overthinking): Give at most 2 clear options or 1 direct recommendation. "
+                "Avoid multi-branch reasoning. Keep choices concrete and bounded."
+            )
+        elif decision_pattern == "hesitation":
+            directives.append(
+                "Decision bias (hesitation): Acknowledge uncertainty gently. "
+                "Provide one grounded next step — not a list. Validate before advising."
+            )
+        elif decision_pattern == "burnout":
+            directives.append(
+                "Decision bias (burnout): Keep the response short and restorative. "
+                "Do not assign tasks. Focus on permission to rest and small wins."
+            )
+        elif decision_pattern == "confusion":
+            directives.append(
+                "Decision bias (confusion): Start with a brief orientation — name what's happening. "
+                "Then offer one simple clarifying question or a single focused step."
+            )
+
+    energy_cycle = identity.get("energy_cycle")
+    ec_conf = confidence.get("energy_cycle", 0.0)
+    if energy_cycle and ec_conf >= 0.4:
+        if energy_cycle in ("low_evening", "late_night_low"):
+            directives.append(
+                "Energy bias (low energy): Keep response brief. "
+                "Favour grounding and rest over ambitious planning."
+            )
+        elif energy_cycle == "morning":
+            directives.append(
+                "Energy bias (morning): User is typically fresh now. "
+                "You may suggest proactive, structured actions."
+            )
+
+    core_goal = identity.get("core_goal")
+    cg_conf = confidence.get("core_goal", 0.0)
+    if core_goal and cg_conf >= 0.4:
+        if core_goal == "exam_preparation":
+            directives.append(
+                "Goal bias (exam prep): Connect advice to study consistency, exam strategy, or focus management where relevant."
+            )
+        elif core_goal == "habit_formation":
+            directives.append(
+                "Goal bias (habit building): Reinforce small consistent actions. Celebrate streaks. Avoid perfectionism framing."
+            )
+
+    traits = identity.get("core_traits") or []
+    if "disciplined" in traits:
+        directives.append(
+            "Trait bias (disciplined): Reinforce existing structure. Frame advice as optimising what they already do well."
+        )
+    if "growth_oriented" in traits:
+        directives.append(
+            "Trait bias (growth-oriented): Highlight the growth angle — frame challenges as learning opportunities."
+        )
+
+    if not directives:
+        return None
+    return "DECISION BIAS:\n" + "\n".join(directives)
+
+
+# Minimum observations before the AI earns permission to reflect identity naturally.
+_REFLECTION_MIN_OBSERVATIONS = 3
+
+
+def build_reflection_hint(identity: Dict[str, Any]) -> Optional[str]:
+    """
+    Give the LLM explicit, bounded permission to reference the user's known patterns
+    in a natural, human way — like a friend who knows you, not a report.
+
+    Only activates once there is enough history (≥3 observations) so the AI
+    doesn't speculate on a stranger.  The hint instructs the model to use
+    reflection *at most once* per response and only when it genuinely fits.
+    """
+    obs = identity.get("observation_count", 0)
+    if obs < _REFLECTION_MIN_OBSERVATIONS:
+        return None
+
+    confidence = identity.get("confidence") or {}
+    dp = identity.get("decision_pattern")
+    dp_conf = confidence.get("decision_pattern", 0.0)
+    ec = identity.get("energy_cycle")
+    cg = identity.get("core_goal")
+    traits = identity.get("core_traits") or []
+
+    # Require at least one well-established field (conf >= 0.5) before enabling
+    # natural reflection — low-confidence profiles shouldn't make assumptions.
+    any_strong = (
+        dp_conf >= 0.5
+        or confidence.get("energy_cycle", 0.0) >= 0.5
+        or confidence.get("core_goal", 0.0) >= 0.5
+    )
+    if not any_strong:
+        return None
+
+    # Build example phrases the LLM can draw on — keep them natural, never clinical.
+    examples: List[str] = []
+    if dp == "overthinking" and dp_conf >= 0.5:
+        examples.append('"You tend to overthink situations like this — let\'s simplify."')
+    elif dp == "hesitation" and dp_conf >= 0.5:
+        examples.append('"I know making decisions can feel hard for you — one step at a time."')
+    elif dp == "burnout" and dp_conf >= 0.5:
+        examples.append('"You\'ve been pushing hard lately — it\'s okay to slow down."')
+    if ec in ("low_evening", "late_night_low") and confidence.get("energy_cycle", 0.0) >= 0.5:
+        examples.append('"Evenings are usually tough for you — keep it light tonight."')
+    if cg == "exam_preparation" and confidence.get("core_goal", 0.0) >= 0.5:
+        examples.append('"This connects directly to what you\'re working towards."')
+    if "disciplined" in traits and any_strong:
+        examples.append('"You\'re usually consistent — you can trust yourself here."')
+
+    if not examples:
+        return None
+
+    hint = (
+        "IDENTITY REFLECTION (use sparingly):\n"
+        "You know this user well enough to acknowledge their patterns naturally — like a friend would. "
+        "Use this at most once in your response, only when it genuinely fits, never as a label. "
+        "Example phrasings you may adapt:\n"
+        + "\n".join(f"  • {e}" for e in examples[:3])
+    )
+    return hint
+
+
 def build_identity_instructions(identity: Dict[str, Any]) -> str:
     parts = ["Identity layer:"]
 
@@ -295,7 +440,16 @@ def build_identity_instructions(identity: Dict[str, Any]) -> str:
         "Adjust tone, depth, and how assertively you guide based on this profile."
     )
 
-    return " ".join(parts)
+    # Append Decision Bias and Reflection Hint sections when available.
+    bias = build_decision_bias(identity)
+    if bias:
+        parts.append(bias)
+
+    reflection = build_reflection_hint(identity)
+    if reflection:
+        parts.append(reflection)
+
+    return "\n".join(parts)
 
 
 def _extract_potential_path_tokens(text: str, max_tokens: int = 4) -> List[str]:

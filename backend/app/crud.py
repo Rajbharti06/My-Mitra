@@ -135,11 +135,27 @@ def observe_identity_signal(
 
     profile.observation_count = (profile.observation_count or 0) + 1
 
+    # Confidence step sizes
+    _CONF_STEP_MATCH = 0.3    # Confirmation strengthens belief
+    _CONF_STEP_DECAY = 0.2    # Contradiction weakens existing stable field
+
     # --- decision_pattern ---
     if decision_pattern:
         if profile.tentative_decision_pattern == decision_pattern:
+            # Confirmed match — raise confidence
             profile.decision_pattern_count = (profile.decision_pattern_count or 0) + 1
+            profile.decision_pattern_confidence = min(
+                1.0, (profile.decision_pattern_confidence or 0.0) + _CONF_STEP_MATCH
+            )
+        elif profile.tentative_decision_pattern is None:
+            # First ever observation — seed tentative without penalising
+            profile.tentative_decision_pattern = decision_pattern
+            profile.decision_pattern_count = 1
         else:
+            # Contradicting candidate — decay confidence in existing stable belief
+            profile.decision_pattern_confidence = max(
+                0.0, (profile.decision_pattern_confidence or 0.0) - _CONF_STEP_DECAY
+            )
             profile.tentative_decision_pattern = decision_pattern
             profile.decision_pattern_count = 1
         if (profile.decision_pattern_count or 0) >= _IDENTITY_STABILITY_THRESHOLD:
@@ -149,7 +165,16 @@ def observe_identity_signal(
     if energy_cycle:
         if profile.tentative_energy_cycle == energy_cycle:
             profile.energy_cycle_count = (profile.energy_cycle_count or 0) + 1
+            profile.energy_cycle_confidence = min(
+                1.0, (profile.energy_cycle_confidence or 0.0) + _CONF_STEP_MATCH
+            )
+        elif profile.tentative_energy_cycle is None:
+            profile.tentative_energy_cycle = energy_cycle
+            profile.energy_cycle_count = 1
         else:
+            profile.energy_cycle_confidence = max(
+                0.0, (profile.energy_cycle_confidence or 0.0) - _CONF_STEP_DECAY
+            )
             profile.tentative_energy_cycle = energy_cycle
             profile.energy_cycle_count = 1
         if (profile.energy_cycle_count or 0) >= _IDENTITY_STABILITY_THRESHOLD:
@@ -159,7 +184,16 @@ def observe_identity_signal(
     if core_goal:
         if profile.tentative_core_goal == core_goal:
             profile.core_goal_count = (profile.core_goal_count or 0) + 1
+            profile.core_goal_confidence = min(
+                1.0, (profile.core_goal_confidence or 0.0) + _CONF_STEP_MATCH
+            )
+        elif profile.tentative_core_goal is None:
+            profile.tentative_core_goal = core_goal
+            profile.core_goal_count = 1
         else:
+            profile.core_goal_confidence = max(
+                0.0, (profile.core_goal_confidence or 0.0) - _CONF_STEP_DECAY
+            )
             profile.tentative_core_goal = core_goal
             profile.core_goal_count = 1
         if (profile.core_goal_count or 0) >= _IDENTITY_STABILITY_THRESHOLD:
@@ -206,6 +240,12 @@ def identity_profile_to_dict(profile: Optional[models.UserIdentityProfile]) -> d
         "core_goal": profile.core_goal,
         "core_traits": traits,
         "observation_count": profile.observation_count or 0,
+        # Confidence scores (0.0 – 1.0) for each stable field
+        "confidence": {
+            "decision_pattern": round(profile.decision_pattern_confidence or 0.0, 2),
+            "energy_cycle": round(profile.energy_cycle_confidence or 0.0, 2),
+            "core_goal": round(profile.core_goal_confidence or 0.0, 2),
+        },
     }
 
 
