@@ -17,6 +17,8 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from core.emotion_engine import emotion_engine
 
+_SESSION_TRAIT_MERGE_LIMIT = 6  # Keep per-request trait list concise; persisted traits may be larger (see CRUD cap)
+
 
 def detect_intent(user_input: str) -> str:
     text = (user_input or "").lower()
@@ -189,13 +191,13 @@ def derive_identity_profile(
     intent: str,
     emotion: Dict[str, Any],
     memory_context: List[str],
-    persisted: Optional[Dict[str, Any]] = None,
+    persisted_identity: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     """
     Build the per-request identity snapshot used to shape the LLM response.
 
-    Heuristics run first; then *stable* fields from `persisted` (the SQL
-    UserIdentityProfile) override the heuristic where a value exists.  This
+    Heuristics run first; then *stable* fields from `persisted_identity`
+    (the stored UserIdentityProfile) override the heuristic where a value exists.  This
     means the profile "gets smarter" over time without losing session-level
     awareness.
     """
@@ -246,7 +248,7 @@ def derive_identity_profile(
     )
 
     # --- Merge persisted stable fields (override heuristics where known) ---
-    p = persisted or {}
+    p = persisted_identity or {}
     stable_user_type = p.get("user_type")
     stable_decision_pattern = p.get("decision_pattern") or decision_style
     stable_energy_cycle = p.get("energy_cycle") or energy_pattern
@@ -254,7 +256,7 @@ def derive_identity_profile(
     persisted_traits: List[str] = p.get("core_traits") or []
 
     # Merge trait lists (persisted first for weight, session heuristics appended)
-    merged_traits = list(dict.fromkeys(persisted_traits + core_traits))[:6]
+    merged_traits = list(dict.fromkeys(persisted_traits + core_traits))[:_SESSION_TRAIT_MERGE_LIMIT]
 
     return {
         # Spec-aligned stable fields
@@ -350,6 +352,7 @@ def build_decision_bias(identity: Dict[str, Any]) -> Optional[str]:
 
 
 # Minimum observations before the AI earns permission to reflect identity naturally.
+# Tuned to 3 to avoid premature speculation while still feeling responsive; mirror identity stability ethos.
 _REFLECTION_MIN_OBSERVATIONS = 3
 
 
@@ -543,7 +546,7 @@ def mitra_core(
     mode_label, fast_mode = choose_mode(intent, emotion)
 
     identity_profile = derive_identity_profile(
-        user_input, intent, emotion, memory_context, persisted=persisted_identity
+        user_input, intent, emotion, memory_context, persisted_identity=persisted_identity
     )
 
     # Personality fusion: blend roles based on emotion + intent (FUSION, NOT SWITCHING).

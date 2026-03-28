@@ -26,6 +26,8 @@ from .mitra_core import mitra_core
 logger = logging.getLogger(__name__)
 
 # Trait values produced by heuristics as placeholders — not meaningful enough to persist.
+# They are session-only anchors to avoid polluting stable identity with vague defaults.
+# Example: "seeking_clarity" is a catch-all fallback when we lack signal; it should never fossilize in the profile.
 _EPHEMERAL_TRAIT_PLACEHOLDERS: frozenset = frozenset(["seeking_clarity"])
 
 

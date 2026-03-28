@@ -335,10 +335,9 @@ class EmotionEngine:
 
         Returns the first matched signal name, or None if no signal detected.
         """
-        text_lower = text.lower()
         for signal, patterns in self.hidden_signal_patterns.items():
             for pattern in patterns:
-                if pattern.search(text_lower):
+                if pattern.search(text):
                     return signal
         return None
 

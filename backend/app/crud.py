@@ -95,6 +95,11 @@ def update_memory_rate_limit_timestamps(
 # ---------------------------------------------------------------------------
 
 _IDENTITY_STABILITY_THRESHOLD = 2  # Pattern must repeat this many times to be promoted
+# Prevent prompt bloat: cap persisted stable traits to a small, human-meaningful list.
+_MAX_STABLE_TRAITS = 10
+# Confidence step sizes for identity stability evolution
+_CONF_STEP_MATCH = 0.3    # Confirmation strengthens belief
+_CONF_STEP_DECAY = 0.2    # Contradiction weakens existing stable field
 
 
 def get_identity_profile(db: Session, user_id: int) -> Optional[models.UserIdentityProfile]:
@@ -134,10 +139,6 @@ def observe_identity_signal(
         db.flush()
 
     profile.observation_count = (profile.observation_count or 0) + 1
-
-    # Confidence step sizes
-    _CONF_STEP_MATCH = 0.3    # Confirmation strengthens belief
-    _CONF_STEP_DECAY = 0.2    # Contradiction weakens existing stable field
 
     # --- decision_pattern ---
     if decision_pattern:
@@ -207,7 +208,7 @@ def observe_identity_signal(
         except Exception:
             existing = []
         merged = list(dict.fromkeys(existing + [t for t in new_traits if t]))
-        profile.core_traits_json = json.dumps(merged[:10])  # cap at 10 traits
+        profile.core_traits_json = json.dumps(merged[:_MAX_STABLE_TRAITS])
 
     # --- user_type (derived from stable decision_pattern + core_goal) ---
     dp = profile.decision_pattern
