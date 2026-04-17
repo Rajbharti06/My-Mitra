@@ -236,24 +236,24 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
         
         if conversation_history:
             context_parts.append("\nRecent conversation:")
-            history_window = 2 if fast_mode else 4
+            history_window = 3 if fast_mode else 6
             for msg in conversation_history[-history_window:]:
                 role = msg.get("role", "user")
                 content = msg.get("content", "")
-                if len(content) > 150: # Shorter limit for low-end
-                    content = content[:150] + "..."
-                context_parts.append(f"{role.title()}: {content}")
-        
+                if len(content) > 200:
+                    content = content[:200] + "..."
+                label = "User" if role == "user" else "Mitra"
+                context_parts.append(f"{label}: {content}")
+
         full_prompt = system_prompt
         if extra_system_instructions:
-            # Extra instructions are appended so they override generic persona guidance.
             full_prompt += "\n\n" + extra_system_instructions
         if context_parts:
             full_prompt += "\n\nContext:\n" + "\n".join(context_parts)
-        full_prompt += f"\n\nStudent: {user_input}\nMyMitra:"
-        
+        full_prompt += f"\n\nUser: {user_input}\nMitra:"
+
         try:
-            max_tokens = 100 if fast_mode else 150  # Reduced for low-end
+            max_tokens = 120 if fast_mode else 200
             timeout_seconds = 15 if fast_mode else 30
             
             response = await self.client.post(

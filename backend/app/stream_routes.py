@@ -78,6 +78,7 @@ _PRESENCE_FALLBACKS = [
 ]
 
 _last_response_cache: dict[int, str] = {}
+_intent_cache: dict[int, str] = {}
 
 def _sanitize_response(response: str, user_input: str, user_id: int = 0) -> str:
     """Strip system language and prevent identical back-to-back responses."""
@@ -94,6 +95,39 @@ def _sanitize_response(response: str, user_input: str, user_id: int = 0) -> str:
 
     _last_response_cache[user_id] = response
     return response
+
+
+# ─── Quick-intent short-circuits (bypass LLM entirely) ───────────────────
+import random as _random
+
+_IDENTITY_RESPONSES = [
+    "You can call me Mitra. I'm here with you. What's been on your mind?",
+    "Mitra. Just someone you can talk to. What made you ask?",
+    "I'm Mitra. Here whenever you need to think something through.",
+]
+
+_WHO_ARE_YOU_RESPONSES = [
+    "I'm just… someone you can talk to. What made you ask that?",
+    "Someone who's here and paying attention. That's about it. What's going on with you?",
+    "Honestly? I'm just here. What's on your mind?",
+]
+
+_GREETING_FOLLOWUP_RESPONSES = [
+    "Hey… I'm here. What's going on with you today?",
+    "Hey. Good to see you. What's been happening?",
+    "Hey… what's on your mind?",
+]
+
+def _get_quick_response(message: str, last_intent: str) -> str | None:
+    """Return a canned response for trivial intents — no LLM needed."""
+    t = message.lower().strip().rstrip("?!.")
+    if t in ("what is your name", "what's your name", "whats your name", "your name", "who are you", "what are you"):
+        if "name" in t:
+            return _random.choice(_IDENTITY_RESPONSES)
+        return _random.choice(_WHO_ARE_YOU_RESPONSES)
+    if t in ("hey", "hi", "hello", "sup", "yo", "heya") and last_intent == "greeting":
+        return _random.choice(_GREETING_FOLLOWUP_RESPONSES)
+    return None
 
 
 # ─── Personality-driven thinking messages ────────────────────────────────
@@ -353,20 +387,28 @@ async def _generate_stream(
         })
 
     # ── Step 8: Generate response via unified Mitra state ────────────
-    try:
-        soul_instructions = mitra_st["system_prompt"]
-        result = await enhanced_chat_pipeline.get_mitra_reply(
-            user_input=message,
-            user_id=user_id,
-            db=db,
-            personality=personality,
-            session_id=session_id,
-            soul_prompt=soul_instructions,
-        )
-        full_response = result.get("response", "I'm here with you.")
-    except Exception as e:
-        logger.error(f"Response generation failed: {e}")
-        full_response = "I'm still here with you."
+    # Check for trivial intents first — no LLM needed
+    _last_intent = _intent_cache.get(user_id or 0, "")
+    quick = _get_quick_response(message, _last_intent)
+    _intent_cache[user_id or 0] = intent
+
+    if quick:
+        full_response = quick
+    else:
+        try:
+            soul_instructions = mitra_st["system_prompt"]
+            result = await enhanced_chat_pipeline.get_mitra_reply(
+                user_input=message,
+                user_id=user_id,
+                db=db,
+                personality=personality,
+                session_id=session_id,
+                soul_prompt=soul_instructions,
+            )
+            full_response = result.get("response", "I'm here with you.")
+        except Exception as e:
+            logger.error(f"Response generation failed: {e}")
+            full_response = "I'm still here with you."
 
     # ── Presence filter: strip system language + prevent repeats ─────
     full_response = _sanitize_response(full_response, message, user_id=user_id or 0)

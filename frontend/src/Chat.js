@@ -310,8 +310,11 @@ function Chat({ onEmotionChange }) {
 
   useEffect(() => { return () => disconnectWebSocket(); }, [disconnectWebSocket]);
 
-  // Auto-focus input on mount
+  // Focus on mount
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
+
+  // Refocus when streaming ends
+  useEffect(() => { if (!isStreaming) inputRef.current?.focus(); }, [isStreaming]);
 
   useEffect(() => {
     if (chatWindowRef.current) chatWindowRef.current.scrollTo({ top: chatWindowRef.current.scrollHeight, behavior: 'smooth' });
