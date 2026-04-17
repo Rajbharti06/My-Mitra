@@ -37,35 +37,34 @@ logger = logging.getLogger(__name__)
 ORGANIC_INTERJECTIONS = {
     "reflective": [
         "You know what…",
-        "Hmm… that actually reminds me of something…",
+        "Hmm…",
         "I might be wrong, but…",
-        "This might sound strange, but…",
         "Can I be honest with you?",
-        "I've been thinking…",
     ],
     "connected": [
         "I'm really glad you told me that.",
-        "That actually matters more than it seems.",
         "I don't think you give yourself enough credit.",
-        "There's something real in what you just said.",
-        "You're more aware of this than you think.",
     ],
     "warm": [
-        "Hey… just so you know —",
         "Before I say anything else…",
-        "I need you to hear this —",
-        "Okay, real talk for a second…",
+        "Okay, real talk —",
+        "For what it's worth…",
     ],
     "curious": [
         "Wait… can I ask you something?",
-        "I'm curious about something…",
         "Actually, hold on…",
-        "Something just clicked…",
+        "Something just came to mind…",
+    ],
+    "casual": [
+        "Hmm… okay.",
+        "Yeah…",
+        "Right.",
+        "Alright…",
     ],
 }
 
 # Probability of adding an organic interjection (0.0 - 1.0)
-INTERJECTION_PROBABILITY = 0.18  # ~18% of messages
+INTERJECTION_PROBABILITY = 0.10  # ~10% of messages — subtle, not constant
 
 
 def get_organic_interjection(
@@ -86,25 +85,23 @@ def get_organic_interjection(
 
     # Adjust probability based on emotion
     prob = INTERJECTION_PROBABILITY
-    if emotion in ("sad", "stressed", "anxious"):
-        prob = 0.25  # More human when emotions are heavy
-    elif emotion in ("happy", "motivated"):
-        prob = 0.15
-    elif intensity == "high":
-        prob = 0.30  # High intensity = more organic breaks
+    if emotion in ("sad", "stressed", "anxious") and intensity in ("medium", "high"):
+        prob = 0.18
+    elif intensity == "low":
+        prob = 0.06  # Low intensity → mostly casual, rarely interject
 
     if random.random() > prob:
         return None
 
     # Choose category based on emotional context
-    if emotion in ("sad", "stressed"):
-        category = random.choice(["warm", "connected", "reflective"])
-    elif emotion in ("anxious", "confused"):
+    if emotion in ("sad", "stressed") and intensity in ("medium", "high"):
+        category = random.choice(["warm", "connected"])
+    elif emotion in ("anxious",):
         category = random.choice(["reflective", "curious"])
     elif emotion in ("happy", "motivated"):
-        category = random.choice(["connected", "curious"])
+        category = random.choice(["casual", "curious"])
     else:
-        category = random.choice(list(ORGANIC_INTERJECTIONS.keys()))
+        category = random.choice(["casual", "reflective", "curious"])
 
     phrases = ORGANIC_INTERJECTIONS.get(category, ORGANIC_INTERJECTIONS["reflective"])
     return random.choice(phrases)

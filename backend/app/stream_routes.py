@@ -64,6 +64,11 @@ _SYSTEM_LEAK_PHRASES = [
     "mode but", "mode, but", "personality mode",
     "language model", "as an ai", "i am an ai", "i'm an ai",
     "i'm a bot", "i'm a chatbot", "as a large language",
+    # Over-performed "deep" phrases
+    "i need you to hear this",
+    "the fact that you're even thinking",
+    "there's something real in what you just said",
+    "you're more aware of this than you think",
 ]
 
 _PRESENCE_FALLBACKS = [
@@ -79,6 +84,43 @@ _PRESENCE_FALLBACKS = [
 
 _last_response_cache: dict[int, str] = {}
 _intent_cache: dict[int, str] = {}
+
+# ─── Input noise detection ────────────────────────────────────────────────
+_NOISE_REPLIES = [
+    "Hmm… I didn't quite catch that. What were you trying to say?",
+    "Say that again? I want to make sure I understand.",
+    "I'm here — say that again?",
+]
+
+def _is_noise(text: str) -> bool:
+    t = text.strip()
+    if len(t) < 2:
+        return True
+    alpha_chars = sum(c.isalpha() for c in t)
+    if not alpha_chars:
+        return True
+    if alpha_chars / len(t) < 0.55:
+        return True
+    # Detect keyboard mashing: no vowels in a long alpha run
+    words = t.split()
+    long_no_vowel = [w for w in words if len(w) > 3 and not any(c in 'aeiou' for c in w.lower())]
+    if len(long_no_vowel) >= len(words) and len(words) > 0:
+        return True
+    return False
+
+# ─── Emotional reflection echo ────────────────────────────────────────────
+_REFLECTIONS = {
+    "sad":      ["That sounds heavy…", "I hear you…", "Yeah…"],
+    "stressed": ["That sounds like a lot.", "I hear the weight in that."],
+    "anxious":  ["That's a lot to carry.", "I hear the worry in that."],
+    "angry":    ["That sounds really frustrating.", "Yeah, I hear you."],
+}
+
+def _reflection_prefix(emotion: str, intensity: str) -> str:
+    phrases = _REFLECTIONS.get(emotion, [])
+    if phrases and intensity == "high" and random.random() < 0.25:
+        return random.choice(phrases) + " "
+    return ""
 
 def _sanitize_response(response: str, user_input: str, user_id: int = 0) -> str:
     """Strip system language and prevent identical back-to-back responses."""
@@ -97,20 +139,11 @@ def _sanitize_response(response: str, user_input: str, user_id: int = 0) -> str:
     return response
 
 
-# ─── Quick-intent short-circuits (bypass LLM entirely) ───────────────────
+# ─── Quick-intent short-circuits + meta-awareness ────────────────────────
 import random as _random
 
-_IDENTITY_RESPONSES = [
-    "You can call me Mitra. I'm here with you. What's been on your mind?",
-    "Mitra. Just someone you can talk to. What made you ask?",
-    "I'm Mitra. Here whenever you need to think something through.",
-]
-
-_WHO_ARE_YOU_RESPONSES = [
-    "I'm just… someone you can talk to. What made you ask that?",
-    "Someone who's here and paying attention. That's about it. What's going on with you?",
-    "Honestly? I'm just here. What's on your mind?",
-]
+_name_store: dict[int, str] = {}
+_message_history: dict[int, list] = {}   # last 5 raw messages per user
 
 _GREETING_FOLLOWUP_RESPONSES = [
     "Hey… I'm here. What's going on with you today?",
@@ -118,15 +151,73 @@ _GREETING_FOLLOWUP_RESPONSES = [
     "Hey… what's on your mind?",
 ]
 
-def _get_quick_response(message: str, last_intent: str) -> str | None:
-    """Return a canned response for trivial intents — no LLM needed."""
+_IDENTITY_LOOP_RESPONSES = [
+    "You keep asking that… what are you actually trying to figure out?",
+    "Hmm. You really want to know who I am. Why does that matter to you?",
+    "You're testing me, aren't you. What's going on?",
+    "You've asked that a few times now. What's behind it?",
+]
+
+def _track_message(user_id: int, message: str) -> list:
+    hist = _message_history.setdefault(user_id, [])
+    hist.append(message.lower().strip())
+    if len(hist) > 5:
+        hist.pop(0)
+    return hist
+
+def _detect_pattern(history: list) -> str | None:
+    if len(history) < 2:
+        return None
+    identity_words = ("who are you", "what are you", "your name", "who made you",
+                      "what's your name", "whats your name", "tell me who")
+    recent = history[-4:]
+    identity_hits = sum(1 for m in recent if any(w in m for w in identity_words))
+    if identity_hits >= 2:
+        return "identity_loop"
+    return None
+
+def _get_quick_response(message: str, last_intent: str, user_id: int = 0) -> str | None:
     t = message.lower().strip().rstrip("?!.")
-    if t in ("what is your name", "what's your name", "whats your name", "your name", "who are you", "what are you"):
-        if "name" in t:
-            return _random.choice(_IDENTITY_RESPONSES)
-        return _random.choice(_WHO_ARE_YOU_RESPONSES)
+
+    hist = _track_message(user_id, message)
+    pattern = _detect_pattern(hist)
+
+    # Meta-awareness: notice the loop before answering it again
+    if pattern == "identity_loop":
+        return _random.choice(_IDENTITY_LOOP_RESPONSES)
+
+    # Name-giving — always intercept this
+    name_match = re.search(r"(?:call you|your name is|i'll call you|name you)\s+([A-Za-z]+)", message, re.IGNORECASE)
+    if name_match:
+        given_name = name_match.group(1).strip()
+        _name_store[user_id] = given_name
+        return _random.choice([
+            f"{given_name}? …alright. If that's how you want to see me.",
+            f"Okay… {given_name} it is. What's on your mind?",
+            f"{given_name}. I can work with that. What's going on with you?",
+        ])
+
+    # First-time identity — answer once, then LLM handles with context
+    already_answered = any(
+        any(w in m for w in ("who are you", "your name", "what are you"))
+        for m in hist[:-1]
+    )
+    if not already_answered:
+        if t in ("what is your name", "what's your name", "whats your name", "your name"):
+            return _random.choice([
+                "Mitra. Just someone you can talk to. What made you ask?",
+                "You can call me Mitra. What's been on your mind?",
+            ])
+        if t in ("who are you", "what are you"):
+            return _random.choice([
+                "I'm just… someone you can talk to. What made you ask that?",
+                "Honestly? I'm just here. What's on your mind?",
+            ])
+
+    # Repeated greeting
     if t in ("hey", "hi", "hello", "sup", "yo", "heya") and last_intent == "greeting":
         return _random.choice(_GREETING_FOLLOWUP_RESPONSES)
+
     return None
 
 
@@ -387,12 +478,13 @@ async def _generate_stream(
         })
 
     # ── Step 8: Generate response via unified Mitra state ────────────
-    # Check for trivial intents first — no LLM needed
+    # ── Determine response source ─────────────────────────────────────
     _last_intent = _intent_cache.get(user_id or 0, "")
-    quick = _get_quick_response(message, _last_intent)
     _intent_cache[user_id or 0] = intent
 
-    if quick:
+    if _is_noise(message):
+        full_response = random.choice(_NOISE_REPLIES)
+    elif (quick := _get_quick_response(message, _last_intent, user_id=user_id or 0)):
         full_response = quick
     else:
         try:
@@ -422,7 +514,16 @@ async def _generate_stream(
 
     # Organic interjection (soul engine)
     if interjection and not care_phrase:
-        full_response = interjection + "\n" + full_response
+        # Strip leading greeting from response to prevent "Hey… just so you know — Hey…"
+        stripped = re.sub(r'^(hey|hi|hello)[^\w]*', '', full_response, flags=re.IGNORECASE).strip()
+        body = stripped if stripped else full_response
+        full_response = interjection + " " + body
+
+    # Emotional reflection echo (brief acknowledgment before response)
+    if not interjection and not care_phrase:
+        echo = _reflection_prefix(primary_emotion, intensity)
+        if echo:
+            full_response = echo + full_response
 
     # Meaning moment
     if meaning_moment:
