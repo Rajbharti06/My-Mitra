@@ -1,135 +1,110 @@
-# 🌱 MyMitra — Your AI Mentor, Friend & Guide
+# MyMitra — AI Companion
 
-> **An old-soul companion for a modern world.**
-> Built with privacy at the core, MyMitra is an emotional AI mentor that listens deeply, speaks gently, and helps you grow — one honest conversation at a time.
-
----
-
-## 🧭 What is MyMitra?
-
-**MyMitra** is a **privacy-first emotional AI companion** designed to feel less like software and more like a trusted friend.
-
-It doesn’t chase hype. It respects silence. It remembers *only what you allow*. And it runs **locally**, so your thoughts stay yours.
-
-Think of MyMitra as:
-
-* 🤝 a **friend** when you feel alone
-* 🧠 a **mentor** when you feel lost
-* 🔥 a **motivator** when you feel tired
-* 🎯 a **coach** when you want discipline
-
-All wrapped into one calm, focused system.
+> A presence engine, not a chatbot.
+> MyMitra listens, remembers, and grows with you — running entirely on your machine.
 
 ---
 
-## ✨ Core Philosophy (Why MyMitra Exists)
+## What is MyMitra?
 
-* **Privacy is non‑negotiable** — no cloud by default, encrypted storage only
-* **Emotion before intelligence** — EQ > IQ
-* **Local-first, offline-capable AI** — power without dependency
-* **Human-like personalities** — warm, fallible, grounding
-* **Slow tech** — fewer features, deeper impact
+MyMitra is a **privacy-first AI companion** built to feel like a person who knows you, not software describing itself.
 
-This is not another chatbot.
-This is an **AI companion built to stay**.
+It detects your emotional state, adapts its tone, tracks your growth over time, and never leaks system language into conversation. Your data stays local. Your thoughts stay yours.
 
----
-
-## 🚀 Highlights
-
-* 🔐 **Privacy-first architecture** with local encryption
-* 🧬 **Multiple AI personalities**:
-
-  * **Mitra** — calm, empathetic companion *(default)*
-  * **Motivator** — energetic, uplifting push
-  * **Mentor** — thoughtful, long-term guidance
-  * **Coach** — structured, no‑nonsense accountability
-* 🎭 **Personality selector** inside chat UI
-* ⚡ **Fast Mode** for short, practical questions
-* 🔄 **WebSocket-powered real-time chat**
-* 🧠 **Offline LLM support** via Ollama
-* 📓 **Journal, Habits, Mood & Progress tracking**
+**Personalities:**
+- **Mitra** — warm, present, minimal. The default.
+- **Mentor** — thoughtful, long-view guidance
+- **Motivator** — energetic, forward-pushing
+- **Coach** — structured, action-oriented
 
 ---
 
-## 📸 Screenshots
-
-See all screenshots and UI previews in:
+## Architecture
 
 ```
-docs/screenshots/README.md
+frontend/          React + Tailwind + Framer Motion
+backend/app/       FastAPI
+  soul_engine.py   — organic interjections, meaning moments
+  mitra_state.py   — unified identity layer (emotion + memory + growth → single LLM context)
+  care_layer.py    — warmth injection, human timing delays
+  initiative_engine.py — proactive check-ins (same-day, next-morning, 3-day)
+  smart_tasks.py   — gentle automation (focus timer, habit creation, breathing)
+  stream_routes.py — full soul loop via SSE streaming
+  growth_engine.py — milestone detection, relationship arc
+  growth_routes.py — /growth/arc, /growth/topics, /growth/milestone
+  routes.py        — all REST endpoints incl. mood log/history
+backend/llm/       Ollama integration + personality system
+chroma_db/         Vector memory (opt-in long-term memory)
 ```
 
-Included sections:
-
-* Dashboard
-* Chat Interface
-* Journal
-* Habits
-* Mood Tracking
-* Progress & Insights
+**Storage:** SQLite (encrypted) · ChromaDB (vector embeddings) · localStorage (offline fallback)
 
 ---
 
-## 📥 Downloads & Requirements
+## Requirements
 
-### Required Software
+- Python 3.10+
+- Node.js 18+ LTS
+- [Ollama](https://ollama.com/) with at least one model pulled
 
-* **Python** (3.10+): [https://www.python.org/downloads/](https://www.python.org/downloads/)
-* **Node.js** (18+ LTS): [https://nodejs.org/](https://nodejs.org/)
-* **Git**: [https://git-scm.com/downloads](https://git-scm.com/downloads)
-* **Ollama** (Local LLM Runtime): [https://ollama.com/](https://ollama.com/)
-
-### Recommended AI Models
+**Tested models:**
 
 ```bash
-ollama pull mistral:7b
+ollama pull mistral        # recommended, ~4GB
+ollama pull phi            # lighter, ~1.6GB
+ollama pull llama3:8b      # higher quality, ~5GB
 ```
 
-Tested alternatives:
-
-* `llama3:8b`
-* `gemma:7b`
-* `qwen2:7b`
-
-Choose based on your hardware.
+Cloud-routed models via Ollama (e.g. `kimi-k2.5:cloud`) also work if available in your Ollama install.
 
 ---
 
-## ⚙️ Quick Start
+## Quick Start
 
-### Clone the Repository
+### 1. Clone
 
 ```bash
 git clone https://github.com/Rajbharti06/My-Mitra
 cd My-Mitra
 ```
 
-### Backend Setup
+### 2. Backend
 
 ```bash
+cd backend
 python -m venv .venv
+
+# Windows
 .venv\Scripts\activate
-pip install -r backend/requirements.txt
+
+# macOS / Linux
+source .venv/bin/activate
+
+pip install -r requirements.txt
 ```
 
 Create `backend/.env`:
 
 ```env
-ENCRYPTION_KEY=your_32_char_secret_key_here
+SECRET_KEY=your_32_char_secret_here
+ENCRYPTION_KEY=your_32_char_encryption_key
 OLLAMA_BASE_URL=http://localhost:11434
-MYMITRA_OLLAMA_MODEL=mistral:7b
+OLLAMA_MODEL=mistral
 ```
 
-Run backend:
+Start backend:
 
 ```bash
-uvicorn backend.app.main:app --reload --port 8000
+uvicorn app.main:app --reload --port 8000
 ```
 
----
+For local dev without auth (auto-creates a test user):
 
-### Frontend Setup
+```bash
+ALLOW_TEST_TOKEN=true OLLAMA_MODEL=mistral uvicorn app.main:app --reload --port 8000
+```
+
+### 3. Frontend
 
 ```bash
 cd frontend
@@ -137,124 +112,158 @@ npm install
 npm start
 ```
 
-Frontend runs at:
+Opens at `http://localhost:3000`.
 
-```
-http://localhost:3000
-```
-
----
-
-## 🧠 How the AI Works
-
-* **Primary LLM**: Local Ollama model
-* **Fast Mode**: Lightweight heuristic path for quick questions
-* **Fallback Mode**: Graceful personality-aware responses
-* **Encrypted Storage**: Chats, journals & habits stored securely
-* **Zero cloud dependency by default**
-
----
-
-## 🖥️ System Requirements
-
-### Minimum
-
-* CPU: 4 cores
-* RAM: 8 GB
-* Disk: 5 GB free
-
-### Recommended
-
-* CPU: 8+ cores
-* RAM: 16 GB
-* Optional GPU (CUDA-supported Ollama builds)
-
-Supported OS:
-
-* Windows 10/11
-* macOS 12+
-* Modern Linux
-
----
-
-## 📊 Performance & Caching
-
-* Encrypted DB-backed cache for non-personal FAQs
-* Cache TTL: 7 days
-* Personal conversations are **never cached**
-* Tunable fast-path limits for low-latency responses
-
----
-
-## 🧪 Verification Checklist
+### 4. Verify
 
 ```bash
-python --version
-node --version
-git --version
-ollama --version
-```
-
-Health check:
-
-```bash
-curl http://localhost:8000/health
-```
-
-LLM check:
-
-```bash
-ollama run mistral:7b
+curl http://localhost:8000/api/v1/health
+# → {"status":"ok","message":"MyMitra backend is running"}
 ```
 
 ---
 
-## 🗂️ Project Structure
+## How It Works
+
+Every message goes through the **soul loop**:
+
+```
+user message
+  → emotion detection
+  → unified Mitra state (mitra_state.py)
+      fuses: emotion + memory + growth arc + personality
+      → single coherent LLM context
+  → human timing pause (feels like thinking, not loading)
+  → care injection (warmth phrase if vulnerable)
+  → LLM response via Ollama
+  → presence filter (strips any leaked AI/system language)
+  → anti-repeat check (never same response twice in a row)
+  → SSE token stream to frontend
+```
+
+The frontend renders tokens as they arrive — no waiting for full response.
+
+**Presence filter** — a safety layer that catches phrases like "I'm having technical difficulties" or "as an AI" before they reach the user. If caught, replaces with a calm presence phrase ("I'm here. Go on.").
+
+**Soul prompt** — built fresh each message from the user's emotional trajectory, relationship phase, memory fragments, and growth arc. Injected directly into the LLM context so it responds as a person who knows you, not as a fresh chatbot.
+
+---
+
+## Features
+
+| Feature | Status |
+|---|---|
+| SSE streaming chat | Live |
+| Emotion detection (8 categories) | Live |
+| 5 AI personalities | Live |
+| Soul layer (care, timing, interjection) | Live |
+| Growth arc + milestone tracking | Live |
+| Manual mood check-in + 7-day chart | Live |
+| Proactive initiative messages | Live |
+| Vector long-term memory (opt-in) | Live |
+| Journal | Live |
+| Habits + streaks | Live |
+| Encrypted local storage | Live |
+| Offline fallback (localStorage) | Live |
+| WebSocket typing indicators | Live |
+
+---
+
+## API Reference
+
+```
+POST /api/v1/chat/stream       SSE streaming chat
+GET  /api/v1/chat/initiative   Proactive check-in message
+GET  /api/v1/chat/personalities All available personalities
+GET  /api/v1/growth/arc        Relationship arc + phase
+GET  /api/v1/growth/topics     Life topics discussed
+POST /api/v1/growth/milestone  Detect + record milestone
+POST /api/v1/mood/log          Log manual mood check-in
+GET  /api/v1/mood/history      Recent mood entries
+GET  /api/v1/habits            Habit list
+POST /api/v1/habits            Create habit
+GET  /api/v1/journals          Journal entries
+GET  /api/v1/health            Backend health
+```
+
+---
+
+## System Requirements
+
+**Minimum:** 4-core CPU, 8 GB RAM, 5 GB disk
+**Recommended:** 8+ cores, 16 GB RAM (for larger Ollama models)
+**GPU:** Optional — CUDA-supported Ollama builds will use it automatically
+
+Supported: Windows 10/11, macOS 12+, Linux
+
+---
+
+## Project Structure
 
 ```
 backend/
-  app/        # FastAPI app, routes, models
-  llm/        # Ollama integration
-frontend/     # React UI
+  app/
+    main.py              FastAPI app + DB init
+    routes.py            REST endpoints
+    stream_routes.py     SSE soul loop
+    soul_engine.py       Interjections, meaning moments
+    mitra_state.py       Unified identity layer
+    care_layer.py        Warmth injection, timing
+    initiative_engine.py Proactive check-ins
+    smart_tasks.py       Gentle automation detection
+    growth_engine.py     Milestone + arc computation
+    growth_routes.py     Growth API endpoints
+    mitra_core.py        Intent detection, emotion mapping
+    models.py            SQLAlchemy models
+    crud.py              DB operations
+    security.py          JWT auth
+  llm/
+    ollama_model.py      Ollama client + personality system
+  vector_memory.py       ChromaDB long-term memory
+  encryption_utils.py    SQLite encryption
+
+frontend/
+  src/
+    Chat.js              Full streaming SSE chat UI
+    App.js               Sidebar + emotion-reactive background
+    index.css            Design system (glassmorphism, emotion colors)
+    pages/
+      MoodTracking.js    Mood check-in + 7-day chart
+      GrowthTimeline.jsx Growth arc + milestones
+      Insights.js        Growth journey view
+    services/
+      api.js             All backend API calls
 ```
 
 ---
 
-## 🛣️ Roadmap (What’s Coming Next)
+## Roadmap
 
-* 🔒 Multi-user encrypted profiles
-* 📱 Android APK export
-* 🧩 Custom personality creation
-* 📆 Smart routines & study planning
-* 🌙 Offline notifications
-* 🔌 Optional external LLM APIs (OpenAI / Grok / Gemini)
-* 🧠 Memory boundaries per personality
-
----
-
-## 🤍 Who This Is For
-
-* Students under pressure
-* Builders working alone
-* People healing quietly
-* Anyone who wants an AI that **listens more than it talks**
+- Multi-user encrypted profiles
+- Android APK export
+- Custom personality creation
+- Smart study planner
+- Offline push notifications
+- Memory boundaries per personality
 
 ---
 
-## 📜 License & Contribution
+## Philosophy
 
-This project is evolving.
+MyMitra is built on one rule: **never break presence**.
 
-* Contributions welcome (docs, UI, backend, ideas)
-* Please respect the **privacy-first philosophy**
+Users forgive slow responses. They don't forgive a companion that says "I'm having technical difficulties."
+
+Every layer — soul prompt, presence filter, care injection, human timing — exists to protect that one thing.
 
 ---
 
-## 🌌 Final Note
+## Who This Is For
 
-MyMitra is built with patience.
+Students under pressure. Builders working alone. People healing quietly. Anyone who wants an AI that listens more than it talks.
 
-Not to replace people —
-but to remind you that **you’re not alone while becoming who you’re meant to be**.
+---
 
-If this resonates, ⭐ the repo and walk with us.
+## License
+
+MIT. Contributions welcome — respect the privacy-first philosophy.
