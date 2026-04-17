@@ -1,36 +1,59 @@
 import React, { useEffect, useState } from 'react';
+import { motion } from 'framer-motion';
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { Download, BookOpen, Target } from 'lucide-react';
+import GrowthTimeline from '../components/GrowthTimeline';
 import * as api from '../services/api';
-import { BarChart, Bar, XAxis, YAxis, Tooltip } from 'recharts';
+
+const CustomTooltip = ({ active, payload, label }) => {
+  if (!active || !payload?.length) return null;
+  return (
+    <div className="glass rounded-lg px-3 py-2 text-xs" style={{ color: 'var(--mm-text-primary)' }}>
+      <p className="font-medium mb-0.5">{label}</p>
+      {payload.map((p, i) => (
+        <p key={i} style={{ color: p.fill }}>{p.name}: {p.value}{p.name === 'habit %' ? '%' : ''}</p>
+      ))}
+    </div>
+  );
+};
+
+function StatCard({ title, value, sub }) {
+  return (
+    <motion.div
+      className="glass rounded-xl p-4 space-y-1"
+      whileHover={{ scale: 1.01 }}
+    >
+      <p className="text-[10px] uppercase tracking-wide" style={{ color: 'var(--mm-text-muted)' }}>{title}</p>
+      <p className="text-2xl font-bold" style={{ color: 'var(--mm-text-primary)' }}>{value}</p>
+      {sub && <p className="text-[10px]" style={{ color: 'var(--mm-text-muted)' }}>{sub}</p>}
+    </motion.div>
+  );
+}
 
 function Insights() {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
   const [stats, setStats] = useState(null);
   const [recentJournals, setRecentJournals] = useState([]);
+  const [activeSection, setActiveSection] = useState('growth');
 
   useEffect(() => {
     const load = async () => {
       setLoading(true);
       try {
-        const [insights, journals] = await Promise.all([
-          api.getInsights(),
-          api.getJournals(),
+        const [, journals] = await Promise.all([
+          api.getInsights().catch(() => null),
+          api.getJournals().catch(() => []),
         ]);
-        setRecentJournals(journals);
-        // Derive stats locally for last 7 days
+        const jList = Array.isArray(journals) ? journals : [];
+        setRecentJournals(jList);
         const now = new Date();
         const start = new Date(); start.setDate(now.getDate() - 6);
-        const inRange = journals.filter(j => {
+        const inRange = jList.filter(j => {
           const d = j.created_at ? new Date(j.created_at) : null;
           return d && d >= start && d <= now;
         });
         const uniqueDays = new Set(inRange.map(j => new Date(j.created_at).toISOString().split('T')[0]));
-        setStats({
-          entries_this_week: inRange.length,
-          active_days: uniqueDays.size,
-        });
-      } catch (e) {
-        setError('Could not load insights');
+        setStats({ entries_this_week: inRange.length, active_days: uniqueDays.size });
       } finally {
         setLoading(false);
       }
@@ -38,122 +61,170 @@ function Insights() {
     load();
   }, []);
 
-  const generateJournalChartData = () => {
+  const journalChartData = () => {
     const now = new Date();
     const days = [...Array(7)].map((_, i) => {
       const d = new Date(now);
       d.setDate(now.getDate() - (6 - i));
-      return { date: d.toISOString().split('T')[0], label: d.toLocaleDateString(undefined, { weekday: 'short' }), entries: 0 };
+      return { date: d.toISOString().split('T')[0], day: d.toLocaleDateString(undefined, { weekday: 'short' }), entries: 0 };
     });
     recentJournals.forEach(j => {
       if (!j.created_at) return;
       const dateStr = new Date(j.created_at).toISOString().split('T')[0];
-      const day = days.find(x => x.date === dateStr);
-      if (day) day.entries += 1;
+      const slot = days.find(x => x.date === dateStr);
+      if (slot) slot.entries += 1;
     });
-    return days.map(d => ({ day: d.label, entries: d.entries }));
+    return days.map(({ day, entries }) => ({ day, entries }));
   };
 
-  const getProgressStore = () => {
+  const habitChartData = () => {
     try {
-      const raw = localStorage.getItem('habitProgress');
-      return raw ? JSON.parse(raw) : {};
-    } catch { return {}; }
-  };
-  const generateWeeklyHabitProgress = () => {
-    const store = getProgressStore();
-    const today = new Date();
-    const days = [...Array(7)].map((_, i) => {
-      const d = new Date(today);
-      d.setDate(today.getDate() - (6 - i));
-      return d.toISOString().split('T')[0];
-    });
-    const data = days.map(date => {
-      let total = 0; let count = 0;
-      Object.values(store).forEach(byDate => {
-        if (byDate[date] != null) { total += byDate[date]; count += 1; }
+      const store = JSON.parse(localStorage.getItem('habitProgress') || '{}');
+      const now = new Date();
+      return [...Array(7)].map((_, i) => {
+        const d = new Date(now);
+        d.setDate(now.getDate() - (6 - i));
+        const date = d.toISOString().split('T')[0];
+        let total = 0; let count = 0;
+        Object.values(store).forEach(byDate => {
+          if (byDate[date] != null) { total += byDate[date]; count += 1; }
+        });
+        return { day: d.toLocaleDateString(undefined, { weekday: 'short' }), 'habit %': count ? Math.round(total / count) : 0 };
       });
-      return { day: date.substring(5), percent: count ? Math.round(total / count) : 0 };
-    });
-    return data;
+    } catch { return []; }
   };
 
   const downloadData = () => {
-    const dataStr = JSON.stringify({ stats, recentJournals }, null, 2);
-    const blob = new Blob([dataStr], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify({ stats, recentJournals }, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
-    a.href = url;
-    a.download = 'insights.json';
-    a.click();
+    a.href = url; a.download = 'mymitra-insights.json'; a.click();
     URL.revokeObjectURL(url);
   };
 
-  if (loading) return <p>Loading...</p>;
-  if (error) return <p style={{ color: '#c0392b' }}>{error}</p>;
+  const sections = [
+    { id: 'growth', label: 'Your Journey' },
+    { id: 'activity', label: 'Activity' },
+  ];
 
   return (
-    <div style={{ maxWidth: 1000, margin: '0 auto', padding: 20 }}>
-      <h2 style={{ color: '#204b72' }}>Insights</h2>
-      {stats && (
-        <>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <StatCard title="Journal Entries This Week" value={stats.entries_this_week} />
-            <StatCard title="Active Days" value={stats.active_days} />
-          </div>
+    <div className="max-w-2xl mx-auto px-6 py-6 space-y-5">
+      <div className="flex items-center justify-between">
+        <h1 className="text-base font-semibold" style={{ color: 'var(--mm-text-primary)' }}>
+          Insights
+        </h1>
+        <motion.button
+          onClick={downloadData}
+          whileHover={{ scale: 1.05 }}
+          whileTap={{ scale: 0.95 }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px]"
+          style={{ background: 'rgba(59,130,246,0.08)', border: '1px solid rgba(59,130,246,0.15)', color: 'var(--mm-accent)' }}
+        >
+          <Download size={12} />
+          Export
+        </motion.button>
+      </div>
 
-          <div style={{ marginTop: 24 }}>
-            <h3 style={{ color: '#204b72' }}>Weekly Journal Activity</h3>
-            <BarChart width={600} height={300} data={generateJournalChartData()}>
-              <XAxis dataKey="day" />
-              <YAxis />
-              <Tooltip />
-              <Bar dataKey="entries" fill="#3a6ea5" />
-            </BarChart>
-          </div>
+      {/* Section tabs */}
+      <div className="flex gap-2">
+        {sections.map(s => (
+          <button key={s.id} onClick={() => setActiveSection(s.id)}
+            className="px-3 py-1.5 rounded-lg text-[11px] font-medium transition-all"
+            style={{
+              background: activeSection === s.id ? 'rgba(59,130,246,0.15)' : 'transparent',
+              border: `1px solid ${activeSection === s.id ? 'rgba(59,130,246,0.3)' : 'rgba(71,85,105,0.2)'}`,
+              color: activeSection === s.id ? 'var(--mm-accent)' : 'var(--mm-text-muted)',
+            }}>
+            {s.label}
+          </button>
+        ))}
+      </div>
 
-          <div style={{ marginTop: 24 }}>
-            <h3 style={{ color: '#204b72' }}>Weekly Habit Progress</h3>
-            <BarChart width={600} height={300} data={generateWeeklyHabitProgress()}>
-              <XAxis dataKey="day" />
-              <YAxis domain={[0,100]} tickFormatter={(v) => `${v}%`} />
-              <Tooltip formatter={(v) => `${v}%`} />
-              <Bar dataKey="percent" fill="#4caf50" />
-            </BarChart>
-            <div style={{ fontSize: 12, color: '#7a8a9e' }}>Averages the logged percent across all habits per day.</div>
-          </div>
+      {/* Growth Journey Section */}
+      {activeSection === 'growth' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }}>
+          <GrowthTimeline />
+        </motion.div>
+      )}
 
-          <div style={{ marginTop: 24 }}>
-            <h3 style={{ color: '#204b72' }}>Recent Journals</h3>
-            <ul>
-              {recentJournals.map(j => (
-                <li key={j.id} style={{ marginBottom: 8 }}>
-                  <strong>{j.title || 'Untitled'}</strong> — {j.created_at ? new Date(j.created_at).toLocaleString() : 'Unknown time'}
-                </li>
-              ))}
-            </ul>
-          </div>
+      {/* Activity Section */}
+      {activeSection === 'activity' && (
+        <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-5">
+          {loading ? (
+            <div className="flex items-center justify-center h-32">
+              <div className="w-5 h-5 rounded-full border border-t-transparent animate-spin" style={{ borderColor: 'var(--mm-accent)', borderTopColor: 'transparent' }} />
+            </div>
+          ) : (
+            <>
+              {/* Stats row */}
+              {stats && (
+                <div className="grid grid-cols-2 gap-3">
+                  <StatCard title="Journal entries this week" value={stats.entries_this_week} sub="Keep writing" />
+                  <StatCard title="Active days" value={stats.active_days} sub="Out of 7" />
+                </div>
+              )}
 
-          <div style={{ marginTop: 24 }}>
-            <button onClick={downloadData} style={{ padding: '8px 12px', borderRadius: 6, border: '1px solid #204b72', background: '#204b72', color: '#fff' }}>
-              Export Insights
-            </button>
-          </div>
-        </>
+              {/* Journal chart */}
+              <div className="glass-elevated rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <BookOpen size={13} style={{ color: 'var(--mm-accent)' }} />
+                  <span className="text-[11px] font-semibold" style={{ color: 'var(--mm-text-secondary)' }}>
+                    Journal Activity (7 days)
+                  </span>
+                </div>
+                <ResponsiveContainer width="100%" height={140}>
+                  <BarChart data={journalChartData()} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--mm-text-muted)' }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fontSize: 10, fill: 'var(--mm-text-muted)' }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(59,130,246,0.05)' }} />
+                    <Bar dataKey="entries" fill="rgba(59,130,246,0.6)" radius={[4, 4, 0, 0]} name="entries" />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Habit chart */}
+              <div className="glass-elevated rounded-2xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <Target size={13} style={{ color: '#34d399' }} />
+                  <span className="text-[11px] font-semibold" style={{ color: 'var(--mm-text-secondary)' }}>
+                    Habit Completion (7 days)
+                  </span>
+                </div>
+                <ResponsiveContainer width="100%" height={140}>
+                  <BarChart data={habitChartData()} margin={{ top: 4, right: 4, bottom: 0, left: -20 }}>
+                    <XAxis dataKey="day" tick={{ fontSize: 10, fill: 'var(--mm-text-muted)' }} axisLine={false} tickLine={false} />
+                    <YAxis domain={[0, 100]} tick={{ fontSize: 10, fill: 'var(--mm-text-muted)' }} axisLine={false} tickLine={false} tickFormatter={v => `${v}%`} />
+                    <Tooltip content={<CustomTooltip />} cursor={{ fill: 'rgba(52,211,153,0.05)' }} />
+                    <Bar dataKey="habit %" fill="rgba(52,211,153,0.6)" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+                <p className="text-[9px]" style={{ color: 'var(--mm-text-muted)' }}>
+                  Average completion across all habits per day.
+                </p>
+              </div>
+
+              {/* Recent journals */}
+              {recentJournals.length > 0 && (
+                <div className="glass rounded-2xl p-4 space-y-2">
+                  <p className="text-[11px] font-semibold" style={{ color: 'var(--mm-text-secondary)' }}>Recent Journals</p>
+                  {recentJournals.slice(0, 5).map(j => (
+                    <div key={j.id} className="flex items-center justify-between py-1.5 border-b border-white/5 last:border-0">
+                      <p className="text-[11px] truncate flex-1 pr-2" style={{ color: 'var(--mm-text-primary)' }}>
+                        {j.content ? j.content.slice(0, 40) + '…' : 'Entry'}
+                      </p>
+                      <p className="text-[9px] flex-shrink-0" style={{ color: 'var(--mm-text-muted)' }}>
+                        {j.created_at ? new Date(j.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
+          )}
+        </motion.div>
       )}
     </div>
   );
 }
 
-function StatCard({ title, value }) {
-  return (
-    <div style={{ background: '#fff', border: '1px solid #e6e9ef', borderRadius: 12, padding: 12 }}>
-      <div style={{ fontSize: 12, color: '#7a8a9e' }}>{title}</div>
-      <div style={{ fontSize: 24, fontWeight: 700 }}>{value}</div>
-    </div>
-  );
-}
-
 export default Insights;
-
-

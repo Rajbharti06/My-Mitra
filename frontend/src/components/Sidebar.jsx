@@ -1,62 +1,68 @@
-import React from 'react';
-import { motion } from 'framer-motion';
+import React, { useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { 
-  Home, 
   MessageCircle, 
   BookOpen, 
   Target, 
   Settings, 
-  Sun, 
-  Moon,
   Heart,
-  TrendingUp
+  TrendingUp,
+  ChevronLeft,
+  ChevronRight,
+  Sparkles
 } from 'lucide-react';
-import { useTheme } from '../utils/theme';
 
-const Sidebar = ({ activeTab, setActiveTab, isCollapsed = false }) => {
-  const { isDark, toggleTheme } = useTheme();
+const Sidebar = ({ activeTab, setActiveTab, isCollapsed: externalCollapsed }) => {
+  const [isCollapsed, setIsCollapsed] = useState(externalCollapsed || false);
 
   const menuItems = [
-    { id: 'dashboard', label: 'Dashboard', icon: Home, emoji: '🏠' },
-    { id: 'chat', label: 'Chat with Mitra', icon: MessageCircle, emoji: '💬' },
+    { id: 'chat', label: 'Chat', icon: MessageCircle, emoji: '💬' },
     { id: 'journal', label: 'Journal', icon: BookOpen, emoji: '📔' },
     { id: 'habits', label: 'Habits', icon: Target, emoji: '🎯' },
-    { id: 'mood', label: 'Mood Tracker', icon: Heart, emoji: '💝' },
-    { id: 'progress', label: 'Progress', icon: TrendingUp, emoji: '📈' },
+    { id: 'mood', label: 'Mood', icon: Heart, emoji: '💝' },
+    { id: 'progress', label: 'Insights', icon: TrendingUp, emoji: '📈' },
   ];
 
   const bottomItems = [
     { id: 'settings', label: 'Settings', icon: Settings, emoji: '⚙️' },
   ];
 
-  const MenuItem = ({ item, isBottom = false }) => {
+  const MenuItem = ({ item }) => {
     const isActive = activeTab === item.id;
     const Icon = item.icon;
 
     return (
       <motion.button
         onClick={() => setActiveTab(item.id)}
-        className={`
-          w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300
-          ${isActive 
-            ? 'bg-warm-brown text-white shadow-lg dark:bg-dark-accent dark:text-gray-900' 
-            : 'text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700'
-          }
-          ${isCollapsed ? 'justify-center px-2' : ''}
-        `}
-        whileHover={{ scale: 1.02 }}
-        whileTap={{ scale: 0.98 }}
-        initial={{ opacity: 0, x: -20 }}
-        animate={{ opacity: 1, x: 0 }}
-        transition={{ duration: 0.3 }}
+        className={`sidebar-item w-full ${isActive ? 'active' : ''} ${isCollapsed ? 'justify-center' : ''}`}
+        whileHover={{ x: isCollapsed ? 0 : 3 }}
+        whileTap={{ scale: 0.97 }}
+        title={isCollapsed ? item.label : undefined}
       >
-        {isCollapsed ? (
-          <span className="text-xl">{item.emoji}</span>
-        ) : (
-          <>
-            <Icon className="w-5 h-5 flex-shrink-0" />
-            <span className="font-medium truncate">{item.label}</span>
-          </>
+        <Icon 
+          size={18} 
+          strokeWidth={isActive ? 2.2 : 1.8}
+          style={{ 
+            filter: isActive ? 'drop-shadow(0 0 6px rgba(59, 130, 246, 0.4))' : 'none',
+            flexShrink: 0
+          }} 
+        />
+        {!isCollapsed && (
+          <motion.span
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="truncate"
+          >
+            {item.label}
+          </motion.span>
+        )}
+        {isActive && !isCollapsed && (
+          <motion.div
+            layoutId="activeIndicator"
+            className="ml-auto w-1.5 h-1.5 rounded-full bg-blue-400"
+            style={{ boxShadow: '0 0 8px rgba(59, 130, 246, 0.5)' }}
+          />
         )}
       </motion.button>
     );
@@ -64,98 +70,109 @@ const Sidebar = ({ activeTab, setActiveTab, isCollapsed = false }) => {
 
   return (
     <motion.div
-      className={`
-        bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 
-        flex flex-col h-full shadow-lg
-        ${isCollapsed ? 'w-16' : 'w-64'}
-      `}
-      initial={{ x: -100, opacity: 0 }}
-      animate={{ x: 0, opacity: 1 }}
-      transition={{ duration: 0.5 }}
+      className={`sidebar-mitra flex flex-col h-full relative z-20 ${isCollapsed ? 'w-16' : 'w-56'}`}
+      animate={{ width: isCollapsed ? 64 : 224 }}
+      transition={{ duration: 0.3, ease: [0.4, 0, 0.2, 1] }}
     >
       {/* Header */}
-      <div className={`p-6 border-b border-gray-200 dark:border-gray-700 ${isCollapsed ? 'p-4' : ''}`}>
+      <div className={`flex items-center ${isCollapsed ? 'justify-center p-3' : 'justify-between px-4'} py-5 border-b border-white/5`}>
         {isCollapsed ? (
-          <div className="flex justify-center">
-            <span className="text-2xl">🌟</span>
-          </div>
+          <motion.div 
+            className="flex items-center justify-center"
+            whileHover={{ scale: 1.1, rotate: 5 }}
+          >
+            <Sparkles size={20} className="text-blue-400" style={{ filter: 'drop-shadow(0 0 8px rgba(59, 130, 246, 0.4))' }} />
+          </motion.div>
         ) : (
           <motion.div
-            initial={{ opacity: 0, y: -10 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ delay: 0.2 }}
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="flex items-center gap-2.5"
           >
-            <h1 className="text-xl font-bold text-warm-brown dark:text-dark-accent flex items-center">
-              <span className="mr-2">🌟</span>
-              My Mitra
-            </h1>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">
-              Your AI companion
-            </p>
+            <Sparkles size={18} className="text-blue-400" style={{ filter: 'drop-shadow(0 0 8px rgba(59, 130, 246, 0.4))' }} />
+            <div>
+              <h1 className="text-sm font-semibold tracking-wide" style={{ color: 'var(--mm-text-primary)' }}>
+                MyMitra
+              </h1>
+              <p className="text-[10px] font-medium" style={{ color: 'var(--mm-text-muted)' }}>
+                Always here for you
+              </p>
+            </div>
           </motion.div>
+        )}
+
+        {!isCollapsed && (
+          <motion.button
+            onClick={() => setIsCollapsed(true)}
+            className="p-1 rounded-md hover:bg-white/5 transition-colors"
+            style={{ color: 'var(--mm-text-muted)' }}
+            whileHover={{ scale: 1.1 }}
+            whileTap={{ scale: 0.9 }}
+          >
+            <ChevronLeft size={14} />
+          </motion.button>
         )}
       </div>
 
-      {/* Main Navigation */}
-      <div className="flex-1 px-4 py-6 space-y-2 overflow-y-auto">
+      {/* Collapse expand button */}
+      {isCollapsed && (
+        <motion.button
+          onClick={() => setIsCollapsed(false)}
+          className="mx-auto mt-2 p-1.5 rounded-md hover:bg-white/5 transition-colors"
+          style={{ color: 'var(--mm-text-muted)' }}
+          whileHover={{ scale: 1.1 }}
+          whileTap={{ scale: 0.9 }}
+        >
+          <ChevronRight size={14} />
+        </motion.button>
+      )}
+
+      {/* Navigation */}
+      <nav className={`flex-1 ${isCollapsed ? 'px-2' : 'px-3'} py-4 space-y-1 overflow-y-auto`}>
         {menuItems.map((item, index) => (
           <motion.div
             key={item.id}
-            initial={{ opacity: 0, x: -20 }}
+            initial={{ opacity: 0, x: -10 }}
             animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: 0.1 * index }}
+            transition={{ delay: 0.05 * index, duration: 0.3 }}
           >
             <MenuItem item={item} />
           </motion.div>
         ))}
-      </div>
+      </nav>
 
       {/* Bottom Section */}
-      <div className="p-4 border-t border-gray-200 dark:border-gray-700 space-y-2">
-        {/* Theme Toggle */}
-        <motion.button
-          onClick={toggleTheme}
-          className={`
-            w-full flex items-center space-x-3 px-4 py-3 rounded-xl transition-all duration-300
-            text-gray-600 hover:bg-gray-100 dark:text-gray-300 dark:hover:bg-gray-700
-            ${isCollapsed ? 'justify-center px-2' : ''}
-          `}
-          whileHover={{ scale: 1.02 }}
-          whileTap={{ scale: 0.98 }}
-        >
-          {isCollapsed ? (
-            <span className="text-xl">{isDark ? '🌙' : '🌞'}</span>
-          ) : (
-            <>
-              {isDark ? <Moon className="w-5 h-5" /> : <Sun className="w-5 h-5" />}
-              <span className="font-medium">{isDark ? 'Dark Mode' : 'Light Mode'}</span>
-            </>
-          )}
-        </motion.button>
-
-        {/* Settings */}
+      <div className={`${isCollapsed ? 'px-2' : 'px-3'} py-3 border-t border-white/5 space-y-1`}>
         {bottomItems.map((item) => (
-          <MenuItem key={item.id} item={item} isBottom />
+          <MenuItem key={item.id} item={item} />
         ))}
 
-        {/* User Info */}
+        {/* User avatar area */}
         {!isCollapsed && (
           <motion.div
-            className="mt-4 p-3 bg-gray-50 dark:bg-gray-700 rounded-xl"
+            className="mt-3 p-2.5 rounded-xl"
+            style={{ background: 'rgba(59, 130, 246, 0.06)', border: '1px solid rgba(59, 130, 246, 0.1)' }}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
-            transition={{ delay: 0.8 }}
+            transition={{ delay: 0.5 }}
           >
-            <div className="flex items-center space-x-3">
-              <div className="w-8 h-8 bg-warm-brown dark:bg-dark-accent rounded-full flex items-center justify-center">
-                <span className="text-white dark:text-gray-900 text-sm font-semibold">R</span>
+            <div className="flex items-center gap-2.5">
+              <div 
+                className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
+                style={{ 
+                  background: 'linear-gradient(135deg, var(--mm-accent), var(--mm-accent-purple))',
+                  color: 'white',
+                  fontSize: '11px'
+                }}
+              >
+                R
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-800 dark:text-gray-200 truncate">
-                  Raj
+                <p className="text-xs font-medium truncate" style={{ color: 'var(--mm-text-primary)' }}>
+                  {(() => { try { return localStorage.getItem('username') || 'User'; } catch { return 'User'; } })()}
                 </p>
-                <p className="text-xs text-gray-500 dark:text-gray-400">
-                  Premium User
+                <p className="text-[10px]" style={{ color: 'var(--mm-text-muted)' }}>
+                  🔒 Private & Encrypted
                 </p>
               </div>
             </div>

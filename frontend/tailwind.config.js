@@ -7,41 +7,47 @@ module.exports = {
   theme: {
     extend: {
       colors: {
-        // Light theme colors
-        cream: '#F6EEE3',
-        'warm-brown': '#6B4F4F',
-        'autumn-orange': '#DDA15E',
-        'text-dark': '#2B2B2B',
-        'soft-white': '#FFFAF4',
-        'card-light': '#FFF8F2',
-        
-        // Dark theme colors
-        'dark-bg': '#1E1E1E',
-        'dark-accent': '#E8C4A2',
-        'dark-orange': '#BC6C25',
-        'text-light': '#F9F9F9',
-        
+        // Presence-first dark palette
+        'mm-deep': '#050a15',
+        'mm-primary': '#0a0e1a',
+        'mm-secondary': '#0f172a',
+        'mm-accent': '#3b82f6',
+        'mm-accent-purple': '#8b5cf6',
+
+        // Legacy compatibility
+        cream: '#0a0e1a',
+        'warm-brown': '#3b82f6',
+        'dark-bg': '#050a15',
+        'dark-accent': '#3b82f6',
+        'text-dark': '#e2e8f0',
+        'text-light': '#e2e8f0',
+
         // Emotion colors
-        'emotion-happy': '#FFD93D',
-        'emotion-sad': '#6B9BD1',
-        'emotion-calm': '#A8E6CF',
-        'emotion-excited': '#FF8C94',
-        'emotion-anxious': '#B19CD9',
+        'emotion-happy': '#fbbf24',
+        'emotion-sad': '#6366f1',
+        'emotion-calm': '#3b82f6',
+        'emotion-excited': '#f97316',
+        'emotion-anxious': '#a78bfa',
       },
       fontFamily: {
-        'poppins': ['Poppins', 'sans-serif'],
-        'nunito': ['Nunito', 'sans-serif'],
+        'inter': ['Inter', 'sans-serif'],
       },
       animation: {
-        'fade-in': 'fadeIn 0.5s ease-in-out',
+        'fade-in': 'fadeIn 0.4s ease-out',
+        'fade-in-up': 'fadeInUp 0.5s ease-out',
         'slide-up': 'slideUp 0.3s ease-out',
         'pulse-soft': 'pulseSoft 2s ease-in-out infinite',
         'float': 'float 6s ease-in-out infinite',
-        'fall': 'fall 10s linear infinite',
+        'breathe': 'breathe 15s ease-in-out infinite',
+        'glow-pulse': 'glowPulse 3s ease-in-out infinite',
       },
       keyframes: {
         fadeIn: {
-          '0%': { opacity: '0', transform: 'translateY(10px)' },
+          '0%': { opacity: '0' },
+          '100%': { opacity: '1' },
+        },
+        fadeInUp: {
+          '0%': { opacity: '0', transform: 'translateY(12px)' },
           '100%': { opacity: '1', transform: 'translateY(0)' },
         },
         slideUp: {
@@ -50,25 +56,32 @@ module.exports = {
         },
         pulseSoft: {
           '0%, 100%': { transform: 'scale(1)' },
-          '50%': { transform: 'scale(1.05)' },
+          '50%': { transform: 'scale(1.03)' },
         },
         float: {
           '0%, 100%': { transform: 'translateY(0px)' },
-          '50%': { transform: 'translateY(-10px)' },
+          '50%': { transform: 'translateY(-8px)' },
         },
-        fall: {
-          '0%': { transform: 'translateY(-10%) rotate(0deg)' },
-          '100%': { transform: 'translateY(110vh) rotate(360deg)' },
+        breathe: {
+          '0%, 100%': { transform: 'scale(1)', opacity: '0.4' },
+          '50%': { transform: 'scale(1.15)', opacity: '0.6' },
+        },
+        glowPulse: {
+          '0%, 100%': { boxShadow: '0 0 12px rgba(139, 92, 246, 0.1)' },
+          '50%': { boxShadow: '0 0 20px rgba(139, 92, 246, 0.2)' },
         },
       },
       boxShadow: {
-        'soft': '0 4px 12px rgba(0, 0, 0, 0.1)',
-        'warm': '0 8px 25px rgba(107, 79, 79, 0.15)',
-        'inner-soft': 'inset 0 2px 4px rgba(0, 0, 0, 0.06)',
+        'soft': '0 4px 12px rgba(0, 0, 0, 0.3)',
+        'glow': '0 0 20px rgba(59, 130, 246, 0.15)',
+        'glow-purple': '0 0 20px rgba(139, 92, 246, 0.12)',
       },
       borderRadius: {
         '2xl': '1rem',
         '3xl': '1.5rem',
+      },
+      backdropBlur: {
+        'glass': '20px',
       },
     },
   },

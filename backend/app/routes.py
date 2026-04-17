@@ -503,6 +503,82 @@ def habit_insights(db: "Session" = Depends(get_db), current_user=Depends(get_cur
 async def health_check():
     return {"status": "ok", "message": "MyMitra backend is running"}
 
+
+# ─── Manual Mood Log ──────────────────────────────────────────────────────
+class MoodLogRequest(BaseModel):
+    mood: str          # e.g. "happy", "sad", "anxious", "calm", "motivated"
+    intensity: str = "medium"  # "low" | "medium" | "high"
+    note: Optional[str] = None
+
+
+@router.post("/mood/log")
+def log_mood(
+    body: MoodLogRequest,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    """Save a user's self-reported mood check-in."""
+    user_id = current_user.id if current_user else None
+    try:
+        from datetime import datetime
+        record = models.EmotionRecord(
+            user_id=user_id,
+            primary_emotion=body.mood,
+            primary_intensity=body.intensity,
+            confidence=1.0,
+            sentiment_polarity=0.0,
+            sentiment_subjectivity=0.5,
+            detection_method="manual",
+            source_text=body.note or f"Manual check-in: {body.mood}",
+            source_type="manual_checkin",
+            timestamp=datetime.utcnow(),
+        )
+        db.add(record)
+        db.commit()
+        db.refresh(record)
+        return {"id": record.id, "mood": body.mood, "intensity": body.intensity, "ok": True}
+    except Exception as e:
+        logger.error(f"Mood log failed: {e}")
+        return {"ok": False, "error": str(e)}
+
+
+@router.get("/mood/history")
+def get_mood_history(
+    limit: int = 30,
+    db=Depends(get_db),
+    current_user=Depends(get_current_user_optional),
+):
+    """Return recent manual mood check-ins for the current user."""
+    user_id = current_user.id if current_user else None
+    if not user_id:
+        return {"moods": []}
+    try:
+        records = (
+            db.query(models.EmotionRecord)
+            .filter(
+                models.EmotionRecord.user_id == user_id,
+                models.EmotionRecord.source_type == "manual_checkin",
+            )
+            .order_by(models.EmotionRecord.timestamp.desc())
+            .limit(limit)
+            .all()
+        )
+        return {
+            "moods": [
+                {
+                    "id": r.id,
+                    "mood": r.primary_emotion,
+                    "intensity": r.primary_intensity,
+                    "note": r.source_text,
+                    "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+                }
+                for r in records
+            ]
+        }
+    except Exception as e:
+        logger.error(f"Mood history failed: {e}")
+        return {"moods": []}
+
 @router.get("/insights")
 def get_insights(db: "Session" = Depends(get_db), current_user=Depends(get_current_user_required)):
     habits = crud.list_habits(db, user_id=current_user.id)

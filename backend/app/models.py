@@ -150,3 +150,16 @@ class SystemActionApproval(Base):
     # Encrypted short preview for auditing (avoid storing full file contents).
     result_preview_encrypted = Column(LargeBinary, nullable=True)
     error_preview = Column(String, nullable=True)
+
+
+class GrowthMilestone(Base):
+    """Stores moments where the user showed real growth or achievement."""
+    __tablename__ = "growth_milestones"
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), index=True, nullable=False)
+    milestone_type = Column(String, nullable=False)  # achievement, growth, insight, decision, courage
+    recognition = Column(String, nullable=True)      # What Mitra said about this moment
+    source_snippet = Column(String, nullable=True)   # First 200 chars of user message
+    weight = Column(Integer, default=2)              # Importance (1-3)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

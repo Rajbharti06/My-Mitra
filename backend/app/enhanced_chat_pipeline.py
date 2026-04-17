@@ -22,6 +22,11 @@ from llm.ollama_model import OllamaMyMitraModel, PersonalityType
 from vector_memory import LongTermMemory
 from . import crud
 from .mitra_core import mitra_core
+from .growth_engine import (
+    build_growth_context_instruction,
+    build_relationship_arc,
+    detect_milestone,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,7 +46,8 @@ class EnhancedChatPipeline:
         user_id: Optional[int] = None,
         db: Optional[Session] = None,
         personality: Optional[str] = None,
-        session_id: Optional[str] = None
+        session_id: Optional[str] = None,
+        soul_prompt: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Get Mitra AI reply; store and use session-specific context when available."""
         # Determine personality
@@ -108,6 +114,49 @@ class EnhancedChatPipeline:
             identity_profile = core.get("identity_profile", {})
             action_suggestions = core.get("action_suggestions", [])
             extra_system_instructions = core.get("extra_system_instructions")
+
+            # Growth context: inject relationship arc into prompt so Mitra references the journey
+            if user_id and db:
+                try:
+                    emotion_history = crud.get_recent_emotions(db, user_id, limit=20)
+                    chat_stats = crud.get_user_chat_stats(db, user_id)
+                    milestones = crud.get_user_milestones(db, user_id)
+                    days_since = 0
+                    first_chat = chat_stats.get("first_chat_at")
+                    if first_chat:
+                        if isinstance(first_chat, str):
+                            from datetime import datetime as _dt
+                            first_chat = _dt.fromisoformat(first_chat)
+                        days_since = max(0, (datetime.utcnow() - first_chat.replace(tzinfo=None)).days)
+                    arc = build_relationship_arc(
+                        emotion_history=emotion_history,
+                        message_count=chat_stats.get("total_messages", 0),
+                        days_since_first_chat=days_since,
+                        milestones=milestones,
+                    )
+                    growth_instruction = build_growth_context_instruction(arc)
+                    if growth_instruction and extra_system_instructions:
+                        extra_system_instructions = growth_instruction + "\n" + extra_system_instructions
+                    elif growth_instruction:
+                        extra_system_instructions = growth_instruction
+                except Exception:
+                    pass
+
+                # Background milestone detection (fire-and-forget, no blocking)
+                try:
+                    milestone = detect_milestone(user_input)
+                    if milestone:
+                        milestone["source_snippet"] = user_input[:200]
+                        crud.store_milestone(db, user_id, milestone)
+                except Exception:
+                    pass
+
+            # Merge soul prompt (unified identity layer) into system instructions
+            if soul_prompt:
+                if extra_system_instructions:
+                    extra_system_instructions = soul_prompt + "\n\n" + extra_system_instructions
+                else:
+                    extra_system_instructions = soul_prompt
 
             # Generate response via model with conversation and memory context
             ai_text = await self.model.generate_response(

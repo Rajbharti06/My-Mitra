@@ -60,6 +60,20 @@ def ensure_db_schema():
                 conn.exec_driver_sql("ALTER TABLE user_settings ADD COLUMN last_preference_memory_at DATETIME NULL")
             if "last_routine_memory_at" not in user_settings_cols:
                 conn.exec_driver_sql("ALTER TABLE user_settings ADD COLUMN last_routine_memory_at DATETIME NULL")
+
+            # Growth milestones table
+            conn.exec_driver_sql("""
+                CREATE TABLE IF NOT EXISTS growth_milestones (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER NOT NULL REFERENCES users(id),
+                    milestone_type TEXT NOT NULL,
+                    recognition TEXT,
+                    source_snippet TEXT,
+                    weight INTEGER DEFAULT 2,
+                    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+                )
+            """)
+            conn.exec_driver_sql("CREATE INDEX IF NOT EXISTS idx_growth_milestones_user ON growth_milestones(user_id)")
     except Exception as e:
         logger.warning(f"Schema check failed: {e}")
 
@@ -106,6 +120,14 @@ app.include_router(system_actions_router, prefix="/api/v1")
 # Include WebSocket routes
 from .websocket_routes import router as websocket_router
 app.include_router(websocket_router)
+
+# Include streaming SSE routes (Phase 2: real-time word-by-word streaming)
+from .stream_routes import router as stream_router
+app.include_router(stream_router, prefix="/api/v1")
+
+# Include growth engine routes
+from .growth_routes import router as growth_router
+app.include_router(growth_router, prefix="/api/v1")
 
 # Root endpoint
 @app.get("/")

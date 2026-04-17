@@ -137,4 +137,23 @@ package-lock.json
 mymitra.db
 *.db
 *.db-journal
-/chroma_db/
+mymitra.log
+
+# ChromaDB data (should be generated fresh per install)
+chroma_db/
+backend/chroma_db/
+**/chroma_db/
+
+# Vector store data
+vector_store/
+**/vector_store/
+
+# Environment & secrets
+.env
+*.env
+!.env.example
+config.local.yaml
+
+# Frontend build
+frontend/build/
+frontend/.env

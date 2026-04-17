@@ -1,101 +1,154 @@
-body {
-  margin: 0;
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Roboto', 'Oxygen',
-    'Ubuntu', 'Cantarell', 'Fira Sans', 'Droid Sans', 'Helvetica Neue',
-    sans-serif;
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  background-color: #f0f2f5;
-}
+/* MyMitra App — Presence-First Overrides */
+/* All base styles are in index.css */
 
 .App {
   display: flex;
   flex-direction: column;
   min-height: 100vh;
-  background: var(--mm-bg);
-  transition: all 0.3s ease;
+  background: transparent;
 }
 
-.App.dark-mode {
-  background-color: #0f141a;
-  color: #e0e0e0;
+/* Toast customization for dark theme */
+.Toastify__toast-theme--dark {
+  background: rgba(15, 23, 42, 0.9) !important;
+  backdrop-filter: blur(20px) !important;
+  border: 1px solid rgba(71, 85, 105, 0.3) !important;
+  border-radius: 12px !important;
+  color: var(--mm-text-primary) !important;
 }
 
-.App.dark-mode nav {
-  background: #111827 !important;
-  border-bottom-color: #1f2937 !important;
-  box-shadow: none !important;
+/* Page content wrappers */
+.page-content {
+  max-width: 800px;
+  margin: 0 auto;
+  width: 100%;
 }
 
-.App.dark-mode .message-bubble {
-  background: rgba(17, 24, 39, 0.8) !important;
-  border-color: #1f2937 !important;
-  color: #e0e0e0 !important;
-  backdrop-filter: blur(8px);
+/* Glass cards used within pages */
+.card-glass {
+  background: var(--mm-surface-glass);
+  backdrop-filter: blur(20px) saturate(150%);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  border: 1px solid var(--mm-border);
+  border-radius: var(--mm-radius-2xl);
+  padding: 1.25rem;
 }
 
-.App.dark-mode .input-area {
-  background-color: #0f141a !important;
-  border-top-color: #1f2937 !important;
+/* Override any remaining light-mode tokens from legacy code */
+.bg-cream { background: transparent !important; }
+.dark\:bg-dark-bg { background: transparent !important; }
+.bg-white { background: var(--mm-surface-glass) !important; backdrop-filter: blur(20px) !important; }
+.dark\:bg-gray-800 { background: var(--mm-surface) !important; }
+.dark\:bg-gray-700 { background: var(--mm-surface-elevated) !important; }
+
+.text-warm-brown, .dark\:text-dark-accent {
+  color: var(--mm-accent) !important;
 }
 
-.App.dark-mode .input-area input {
-  background-color: #111827 !important;
-  border-color: #1f2937 !important;
-  color: #e0e0e0 !important;
+.border-gray-200, .dark\:border-gray-700 {
+  border-color: var(--mm-border) !important;
 }
 
-.App.dark-mode .prompt-chip {
-  background: #111827 !important;
-  border-color: #1f2937 !important;
-  color: #e0e0e0 !important;
+.text-gray-800, .dark\:text-gray-200 {
+  color: var(--mm-text-primary) !important;
 }
 
-.App.dark-mode .prompt-chip:hover {
-  background: #3a6ea5 !important;
-  color: #fff !important;
+.text-gray-600, .dark\:text-gray-300 {
+  color: var(--mm-text-secondary) !important;
 }
 
-.App-header {
-  background-color: var(--mm-surface);
-  padding: 1rem;
-  border-bottom: 1px solid var(--mm-border);
-  text-align: center;
-  box-shadow: var(--mm-shadow);
+.text-gray-500, .dark\:text-gray-400 {
+  color: var(--mm-text-muted) !important;
 }
 
-.App-header h1 {
-  margin: 0;
-  font-size: 1.5rem;
-  color: var(--mm-text);
-}
-
-main {
-  flex-grow: 1;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  padding: 20px;
-}
-
-/* Persona chips */
+/* Persona chips override */
 .persona-chip {
-  border: 1px solid #cdd6e1;
-  background: #ffffff;
-  color: var(--mm-primary);
-  border-radius: 16px;
-  padding: 6px 12px;
+  border: 1px solid var(--mm-border);
+  background: var(--mm-surface-glass);
+  backdrop-filter: blur(12px);
+  color: var(--mm-text-secondary);
+  border-radius: 20px;
+  padding: 6px 14px;
   cursor: pointer;
   font-size: 12px;
-  font-weight: 600;
-  text-transform: capitalize;
+  font-weight: 500;
   transition: all 0.2s ease-in-out;
 }
 .persona-chip:hover {
-  border-color: var(--mm-primary);
+  border-color: var(--mm-accent);
+  background: rgba(59, 130, 246, 0.1);
+  color: var(--mm-text-primary);
 }
 .persona-chip--active {
-  border: 2px solid var(--mm-primary);
-  background: var(--mm-primary);
-  color: #ffffff;
+  border: 1.5px solid var(--mm-accent);
+  background: rgba(59, 130, 246, 0.15);
+  color: var(--mm-accent);
+}
+
+/* Force dark colors on existing components */
+.bg-gray-100, .dark\:bg-gray-700,
+.bg-gray-50 {
+  background: rgba(30, 41, 59, 0.4) !important;
+}
+
+.hover\:bg-gray-100:hover, .dark\:hover\:bg-gray-700:hover,
+.hover\:bg-gray-200:hover, .dark\:hover\:bg-gray-600:hover {
+  background: rgba(59, 130, 246, 0.08) !important;
+}
+
+/* Input overrides */
+input, textarea, select {
+  background: rgba(15, 23, 42, 0.5) !important;
+  border-color: var(--mm-border) !important;
+  color: var(--mm-text-primary) !important;
+  border-radius: var(--mm-radius-lg) !important;
+}
+
+input::placeholder, textarea::placeholder {
+  color: var(--mm-text-muted) !important;
+}
+
+input:focus, textarea:focus, select:focus {
+  outline: none !important;
+  border-color: rgba(59, 130, 246, 0.4) !important;
+  box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1) !important;
+}
+
+/* Button overrides */
+button.bg-blue-600,
+button.bg-warm-brown {
+  background: linear-gradient(135deg, var(--mm-accent), var(--mm-accent-purple)) !important;
+  border: none !important;
+  color: white !important;
+  border-radius: var(--mm-radius-lg) !important;
+}
+
+button.bg-blue-600:hover,
+button.bg-warm-brown:hover {
+  opacity: 0.9 !important;
+  box-shadow: 0 4px 16px rgba(59, 130, 246, 0.3) !important;
+}
+
+/* Recharts override for dark theme */
+.recharts-cartesian-axis-tick-value {
+  fill: var(--mm-text-muted) !important;
+  font-size: 11px !important;
+}
+
+.recharts-legend-item-text {
+  color: var(--mm-text-secondary) !important;
+}
+
+/* Journal / Habits / Insights — force dark theme compatibility */
+h1, h2, h3, h4 {
+  color: var(--mm-text-primary);
+}
+
+p {
+  color: var(--mm-text-secondary);
+}
+
+/* Shadow overrides */
+.shadow-lg, .shadow-soft, .shadow-warm {
+  box-shadow: var(--mm-shadow-md) !important;
 }

@@ -195,3 +195,91 @@ export const commitSystemAction = (approval_id, approve) =>
     method: 'POST',
     body: JSON.stringify({ approval_id, approve }),
   });
+
+// ── Streaming SSE Chat ──────────────────────────────────────────────
+/**
+ * Stream a chat message via Server-Sent Events.
+ * Returns a ReadableStream that yields SSE events:
+ *   - thinking: personality-driven thinking indicator
+ *   - memory_recall: "I remember…" moment
+ *   - emotion: detected user emotion
+ *   - token: individual word of AI response
+ *   - done: final metadata
+ *
+ * @param {string} message
+ * @param {string} sessionId
+ * @param {string} personality
+ * @param {function} onEvent - callback(eventType, data)
+ * @returns {Promise<object>} - final "done" event data
+ */
+export const streamMessage = async (message, sessionId, personality, onEvent) => {
+    const token = getToken();
+    const headers = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const response = await fetch(`${API_BASE}/chat/stream`, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({ message, session_id: sessionId, personality }),
+    });
+
+    if (!response.ok) {
+        throw new Error(`Stream failed: ${response.status}`);
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = '';
+    let finalData = null;
+
+    while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+
+        // Process complete SSE lines
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || ''; // Keep incomplete line in buffer
+
+        for (const line of lines) {
+            if (line.startsWith('data: ')) {
+                try {
+                    const data = JSON.parse(line.slice(6));
+                    if (onEvent) onEvent(data.type, data);
+                    if (data.type === 'done') finalData = data;
+                } catch (e) {
+                    console.warn('SSE parse error:', e);
+                }
+            }
+        }
+    }
+
+    return finalData;
+};
+
+// ── Slash Commands ──────────────────────────────────────────────────
+export const sendSlashCommand = (command, sessionId) => {
+    return request('/chat/command', {
+        method: 'POST',
+        body: JSON.stringify({ command, session_id: sessionId }),
+    });
+};
+
+// ── AI Initiative (proactive check-ins) ─────────────────────────────
+export const checkInitiative = () => request('/chat/initiative');
+
+// ── Emotion Patterns ────────────────────────────────────────────────
+export const getEmotionPatterns = () => request('/chat/patterns');
+
+// ── Growth Engine ────────────────────────────────────────────────────
+export const getGrowthArc = () => request('/growth/arc');
+export const getGrowthTopics = () => request('/growth/topics');
+export const recordMilestone = (text) => request(`/growth/milestone?text=${encodeURIComponent(text)}`, { method: 'POST' });
+
+// ── Mood Check-In ─────────────────────────────────────────────────────
+export const logMood = (mood, intensity = 'medium', note = null) =>
+    request('/mood/log', { method: 'POST', body: JSON.stringify({ mood, intensity, note }) });
+
+export const getMoodHistory = (limit = 30) =>
+    request(`/mood/history?limit=${limit}`);

@@ -679,3 +679,92 @@ def list_journals(db: Session, user_id: int):
             "created_at": it.created_at.isoformat() if it.created_at else None
         })
     return result
+
+
+# ─── Growth Engine helpers ────────────────────────────────────────────────────
+
+def get_recent_emotions(db: Session, user_id: int, limit: int = 30) -> List[dict]:
+    """Return recent emotion records as dicts for the growth engine."""
+    try:
+        records = (
+            db.query(models.EmotionRecord)
+            .filter(models.EmotionRecord.user_id == user_id)
+            .order_by(desc(models.EmotionRecord.timestamp))
+            .limit(limit)
+            .all()
+        )
+        return [
+            {
+                "emotion": r.primary_emotion,
+                "intensity": r.primary_intensity,
+                "timestamp": r.timestamp.isoformat() if r.timestamp else None,
+            }
+            for r in records
+        ]
+    except Exception:
+        return []
+
+
+def get_user_chat_stats(db: Session, user_id: int) -> dict:
+    """Return total message count and first chat date for a user."""
+    try:
+        first = (
+            db.query(models.ChatMessage)
+            .filter(models.ChatMessage.user_id == user_id)
+            .order_by(models.ChatMessage.created_at)
+            .first()
+        )
+        total = (
+            db.query(models.ChatMessage)
+            .filter(models.ChatMessage.user_id == user_id)
+            .count()
+        )
+        return {
+            "total_messages": total,
+            "first_chat_at": first.created_at.isoformat() if first and first.created_at else None,
+        }
+    except Exception:
+        return {"total_messages": 0, "first_chat_at": None}
+
+
+def get_user_milestones(db: Session, user_id: int) -> List[dict]:
+    """Return all growth milestones for a user."""
+    try:
+        milestones = (
+            db.query(models.GrowthMilestone)
+            .filter(models.GrowthMilestone.user_id == user_id)
+            .order_by(desc(models.GrowthMilestone.created_at))
+            .limit(20)
+            .all()
+        )
+        return [
+            {
+                "id": m.id,
+                "type": m.milestone_type,
+                "recognition": m.recognition,
+                "source_snippet": m.source_snippet,
+                "weight": m.weight,
+                "created_at": m.created_at.isoformat() if m.created_at else None,
+            }
+            for m in milestones
+        ]
+    except Exception:
+        return []
+
+
+def store_milestone(db: Session, user_id: int, milestone: dict) -> Optional[models.GrowthMilestone]:
+    """Store a detected growth milestone."""
+    try:
+        m = models.GrowthMilestone(
+            user_id=user_id,
+            milestone_type=milestone.get("type", "growth"),
+            recognition=milestone.get("recognition"),
+            source_snippet=milestone.get("source_snippet", "")[:200],
+            weight=milestone.get("weight", 2),
+        )
+        db.add(m)
+        db.commit()
+        db.refresh(m)
+        return m
+    except Exception:
+        return None

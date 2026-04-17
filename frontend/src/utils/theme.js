@@ -1,47 +1,37 @@
-// Theme context and hooks
+// Theme context and hooks — MyMitra Presence-First Design
 import { createContext, useContext, useState, useEffect } from 'react';
 
-// Theme management utility
+// MyMitra is always dark-mode by design (emotional companion = calm dark UI)
 export const themes = {
-  light: {
-    name: 'light',
-    colors: {
-      background: '#F6EEE3',
-      surface: '#FFFFFF',
-      primary: '#6B4F4F',
-      accent: '#DDA15E',
-      text: '#2B2B2B',
-      textSecondary: '#6B4F4F',
-      border: '#EADBCF',
-      chatUser: '#E8C4A2',
-      chatAI: '#FFF8F0',
-    }
-  },
   dark: {
     name: 'dark',
     colors: {
-      background: '#1E1E1E',
-      surface: '#2A2A2A',
-      primary: '#E8C4A2',
-      accent: '#BC6C25',
-      text: '#F9F9F9',
-      textSecondary: '#C9B6A6',
-      border: '#3A3A3A',
-      chatUser: '#BC6C25',
-      chatAI: '#2A2A2A',
+      background: '#050a15',
+      surface: 'rgba(15, 23, 42, 0.7)',
+      primary: '#3b82f6',
+      accent: '#8b5cf6',
+      text: '#e2e8f0',
+      textSecondary: '#94a3b8',
+      border: 'rgba(71, 85, 105, 0.3)',
+      chatUser: 'rgba(59, 130, 246, 0.2)',
+      chatAI: 'rgba(30, 41, 59, 0.5)',
     }
   }
 };
 
 export const emotionColors = {
-  happy: '#FFD93D',
-  sad: '#6B9BD1',
-  calm: '#A8E6CF',
-  excited: '#FF8C94',
-  anxious: '#B19CD9',
-  neutral: '#D1D5DB',
-  motivated: '#10B981',
-  stressed: '#EF4444',
+  happy: '#fbbf24',
+  sad: '#6366f1',
+  calm: '#3b82f6',
+  excited: '#f97316',
+  anxious: '#a78bfa',
+  neutral: '#64748b',
+  motivated: '#10b981',
+  stressed: '#ef4444',
+  grateful: '#34d399',
+  proud: '#f59e0b',
+  confused: '#f472b6',
+  tired: '#6b7280',
 };
 
 export const getEmotionColor = (emotion) => {
@@ -69,10 +59,8 @@ export const getEmotionEmoji = (emotion) => {
 const ThemeContext = createContext();
 
 export const ThemeProvider = ({ children }) => {
-  const [isDark, setIsDark] = useState(() => {
-    const saved = localStorage.getItem('mitra-theme');
-    return saved ? JSON.parse(saved) : false;
-  });
+  // Always dark — presence-first design
+  const isDark = true;
 
   const [performanceMode, setPerformanceMode] = useState(() => {
     const saved = localStorage.getItem('mitra-performance-mode');
@@ -80,21 +68,18 @@ export const ThemeProvider = ({ children }) => {
   });
 
   useEffect(() => {
-    localStorage.setItem('mitra-theme', JSON.stringify(isDark));
-    if (isDark) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
-    }
-  }, [isDark]);
+    // Always ensure dark mode class is present
+    document.documentElement.classList.add('dark');
+    document.documentElement.setAttribute('data-theme', 'dark');
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('mitra-performance-mode', JSON.stringify(performanceMode));
   }, [performanceMode]);
 
-  const toggleTheme = () => setIsDark(!isDark);
+  const toggleTheme = () => {}; // No-op — always dark
   const togglePerformanceMode = () => setPerformanceMode(!performanceMode);
-  const currentTheme = isDark ? themes.dark : themes.light;
+  const currentTheme = themes.dark;
 
   return (
     <ThemeContext.Provider value={{ isDark, toggleTheme, currentTheme, themes, performanceMode, togglePerformanceMode }}>

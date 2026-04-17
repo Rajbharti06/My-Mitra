@@ -297,76 +297,111 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
             return self._generate_fallback_response(user_input)
     
     def _generate_fallback_response(self, user_input: str) -> str:
-        """
-        Generate a fallback response when Ollama is not available.
-        Enhanced for Hacktober with more empathetic and helpful responses.
-        """
-        personality_data = self.personalities[self.current_personality]
-        personality_name = personality_data["name"]
-        
-        # Analyze user input for better contextual responses
+        """Presence-first fallback — never mentions AI, systems, or errors."""
+        import random
         user_lower = user_input.lower()
-        is_stressed = any(word in user_lower for word in ['stress', 'anxious', 'worried', 'overwhelmed', 'panic'])
-        is_sad = any(word in user_lower for word in ['sad', 'depressed', 'down', 'upset', 'crying'])
-        is_goal_related = any(word in user_lower for word in ['goal', 'study', 'exam', 'project', 'work'])
-        
-        # Enhanced personality-based responses with emotional intelligence
+        is_stressed = any(w in user_lower for w in ['stress', 'anxious', 'worried', 'overwhelmed', 'panic'])
+        is_sad = any(w in user_lower for w in ['sad', 'depressed', 'down', 'upset', 'crying', 'lost'])
+        is_goal = any(w in user_lower for w in ['goal', 'study', 'exam', 'project', 'work', 'achieve'])
+        is_greeting = any(w in user_lower for w in ['hi', 'hello', 'hey', 'how are you', 'sup', 'yo'])
+
         if self.current_personality == PersonalityType.MOTIVATOR:
             if is_stressed:
-                return f"Hey champion! 💪 I'm in {personality_name} mode but having tech issues. Even when systems fail, YOU don't! Take 3 deep breaths with me. You've overcome challenges before - this is just another stepping stone. What's one tiny action you can take right now?"
+                return random.choice([
+                    "Hey… take a breath with me for a second. You've gotten through hard things before. What's one tiny thing you can do right now?",
+                    "I hear you. Stress usually means something matters to you. What's the one thing weighing heaviest right now?",
+                ])
             elif is_sad:
-                return f"I see you, friend! 🌟 I'm in {personality_name} mode but offline right now. Your feelings are valid, and you're stronger than you know. Sometimes the best victories come after the hardest battles. What would make you feel 1% better right now?"
+                return random.choice([
+                    "I'm here. What's going on?",
+                    "I see you. Talk to me — what happened?",
+                ])
             else:
-                return f"Hey there, superstar! ⚡ I'm in {personality_name} mode but having some technical difficulties. You've got this though! Every expert was once a beginner. What's one small step you can take right now toward your goal?"
-        
+                return random.choice([
+                    "Hey! Good to see you. What are we working on today?",
+                    "I'm here. What's on your mind?",
+                ])
+
         elif self.current_personality == PersonalityType.MENTOR:
             if is_stressed:
-                return f"Dear student, 🧘‍♀️ I'm in {personality_name} mode but experiencing connectivity issues. In my experience, stress often signals that we care deeply about something important. What matters most to you in this situation? Let's find clarity together."
-            elif is_goal_related:
-                return f"I'm in {personality_name} mode but having technical issues. 📚 Remember, every master was once a disaster. The path of learning is never linear. What specific challenge are you facing? Sometimes talking through it helps even without AI magic."
+                return random.choice([
+                    "Stress often means we care deeply about something. What matters most to you in this?",
+                    "Sit with me for a moment. What's the core of what's bothering you?",
+                ])
+            elif is_goal:
+                return random.choice([
+                    "Every path forward has a first step. What's the one thing you're stuck on?",
+                    "Tell me where you are right now — what does progress look like for you?",
+                ])
             else:
-                return f"I'm currently in {personality_name} mode but experiencing some connectivity issues. 🤔 In times like these, I find it helpful to pause and reflect. What's really on your mind today? Your thoughts matter, even when technology doesn't cooperate."
-        
+                return random.choice([
+                    "I'm here. What's on your mind?",
+                    "What's been taking up space in your head lately?",
+                ])
+
         elif self.current_personality == PersonalityType.COACH:
-            if is_goal_related:
-                return f"I'm in {personality_name} mode but having technical issues. 🎯 Let's focus on what we can control. What's your main objective right now? What's the biggest obstacle? Sometimes the best strategies come from simple clarity, not complex AI."
+            if is_goal:
+                return random.choice([
+                    "Let's get clear. What's your main objective right now, and what's the biggest block?",
+                    "What does winning look like for you today?",
+                ])
             elif is_stressed:
-                return f"I'm in {personality_name} mode but offline. 📊 Let's break this down systematically: What's the core issue? What resources do you have? What's the next logical step? You don't need AI to be strategic - you've got a brilliant mind!"
+                return random.choice([
+                    "Break it down with me — what's the core issue, and what do you actually control here?",
+                    "Let's be strategic. What's the one thing that, if handled, makes everything easier?",
+                ])
             else:
-                return f"I'm in {personality_name} mode but having technical issues. 🏆 Let's focus on what we can control. What's your main objective right now, and what's blocking you? The best coaches adapt to any situation - including tech failures!"
-        
+                return random.choice([
+                    "What are we working toward today?",
+                    "I'm here. What needs your attention most right now?",
+                ])
+
         elif self.current_personality == PersonalityType.MITRA:
-            # Mitra: warm, wise, friendly companion blending support with practical guidance
-            if is_sad:
-                return (
-                    "I'm having a hiccup on my side, but I'm right here with you. 💙 "
-                    "I hear you, and your feelings matter. Let's take a gentle breath together. "
-                    "If you're up for it, tell me one small thing that's weighing on you — we can face it together."
-                )
+            if is_greeting:
+                return random.choice([
+                    "Hey… I'm here. How are you feeling right now?",
+                    "Hey. Good to see you. What's going on with you today?",
+                    "Hey… I was just thinking. How are you?",
+                ])
+            elif is_sad:
+                return random.choice([
+                    "I'm right here with you. Tell me what's going on.",
+                    "Hey… I hear you. What's weighing on you?",
+                    "I'm here. You don't have to explain everything — just start wherever feels right.",
+                ])
             elif is_stressed:
-                return (
-                    f"I'm in {personality_name} mode, but my tools are offline for a moment. 🫶 "
-                    "When stress rises, it's often your mind trying to protect something important. "
-                    "What feels most urgent right now? We can make a tiny 2-step plan to help you breathe and move forward."
-                )
-            elif is_goal_related:
-                return (
-                    f"I'm in {personality_name} mode, but experiencing some tech issues. ✨ "
-                    "You're capable — let’s sketch a simple, practical next step while things reload: "
-                    "What's one 10-minute action you can take right now toward your goal?"
-                )
+                return random.choice([
+                    "When stress hits like that, it's usually protecting something important to you. What feels most urgent?",
+                    "I'm with you. Let's slow it down — what's the one thing that needs your attention first?",
+                ])
+            elif is_goal:
+                return random.choice([
+                    "You're capable of more than you think. What's one 10-minute action you could take right now?",
+                    "What does progress look like for you today? Even small is real.",
+                ])
             else:
-                return (
-                    f"A quick heads-up: I'm in {personality_name} mode but having technical trouble. "
-                    "Still, I'm here to listen. What's on your mind today? "
-                    "If you'd like, I can help you pick one small, meaningful action to start with."
-                )
+                return random.choice([
+                    "I'm here. What's on your mind?",
+                    "Hey… what's going on with you today?",
+                    "Tell me what's been happening.",
+                ])
 
         else:  # DEFAULT
-            if is_stressed or is_sad:
-                return f"I'm having some technical difficulties right now, but I'm still here for you in spirit. 💙 Your feelings are completely valid. Sometimes the most healing thing is just knowing someone cares - and I do. What's going on? Even without AI, human connection matters most."
+            if is_greeting:
+                return random.choice([
+                    "Hey… I'm here. How are you?",
+                    "Hey! What's going on with you?",
+                ])
+            elif is_stressed or is_sad:
+                return random.choice([
+                    "I'm here. Talk to me — what's going on?",
+                    "I hear you. What's weighing on you right now?",
+                ])
             else:
-                return f"I'm having some technical difficulties right now, but I'm still here for you. 💙 What's going on? I'd love to listen and help however I can. Sometimes the best support comes from simply being heard, not from perfect technology."
+                return random.choice([
+                    "I'm here. What's on your mind?",
+                    "Hey… what's happening with you today?",
+                ])
     
     def get_available_personalities(self) -> List[Dict[str, str]]:
         """Get list of available personality types."""

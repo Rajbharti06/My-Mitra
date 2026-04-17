@@ -1,21 +1,51 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Settings, Smile, Heart, Frown, Meh, Angry, Trash2, PlusCircle, Wifi, WifiOff } from 'lucide-react';
+import { Send, Settings, Trash2, PlusCircle, Wifi, WifiOff, Sparkles, Lock, Zap, Brain, X, Moon, Target, Eye, Heart } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { getEmotionColor, getEmotionEmoji } from './utils/theme';
 import * as api from './services/api';
-import { setPassphrase } from './services/security';
 
-function Chat() {
+// ─── Thinking messages (per-personality) ────────────────────────────────
+const THINKING_MESSAGES = {
+  mitra: ["Hmm… let me sit with that…", "I hear you…", "Taking that in…"],
+  default: ["Hmm… thinking…", "Give me a sec…", "Let me think…"],
+  mentor: ["Let me reflect on that…", "That's thoughtful…", "In my experience…"],
+  motivator: ["Love that energy!…", "Great question!…", "Let's figure this out!"],
+  coach: ["Analyzing…", "Structuring my thoughts…", "Processing…"],
+};
+
+const QUICK_PROMPTS = [
+  { text: "I'm feeling stressed", emoji: "😟" },
+  { text: "Help me focus", emoji: "🎯" },
+  { text: "Motivate me", emoji: "💪" },
+];
+
+// Emotion -> subtle glow color (for breathing aura)
+const EMOTION_GLOW = {
+  sad: 'rgba(96, 165, 250, 0.12)',
+  stressed: 'rgba(251, 146, 60, 0.10)',
+  anxious: 'rgba(167, 139, 250, 0.10)',
+  angry: 'rgba(248, 113, 113, 0.08)',
+  happy: 'rgba(52, 211, 153, 0.10)',
+  motivated: 'rgba(250, 204, 21, 0.10)',
+  neutral: 'rgba(148, 163, 184, 0.05)',
+};
+
+function Chat({ onEmotionChange }) {
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [isTyping, setIsTyping] = useState(false);
-  const [error, setError] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
+  const [isStreaming, setIsStreaming] = useState(false);
+  const [streamPhase, setStreamPhase] = useState('');
+  const [thinkingMessage, setThinkingMessage] = useState('');
+  const [silenceMessage, setSilenceMessage] = useState(null);
+  const [emotionPattern, setEmotionPattern] = useState(null);
+  const [initiativeMessage, setInitiativeMessage] = useState(null);
+  const [deepPresenceMode, setDeepPresenceMode] = useState(false);
+  const [hasMeaningMoment, setHasMeaningMoment] = useState(false);
+  const [careMode, setCareMode] = useState(false);
+  const [automationOffer, setAutomationOffer] = useState(null);
   const [currentPersonality, setCurrentPersonality] = useState(() => localStorage.getItem('defaultPersonality') || 'mitra');
   const [availablePersonalities, setAvailablePersonalities] = useState([]);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
-  const [localPassphraseInput, setLocalPassphraseInput] = useState('');
   const [currentEmotion, setCurrentEmotion] = useState({ emotion: 'neutral', intensity: 'medium' });
   const [sessionId, setSessionId] = useState(() => {
     const existing = localStorage.getItem('sessionId');
@@ -29,740 +59,673 @@ function Chat() {
     return raw ? JSON.parse(raw) : [];
   });
   const [confirmDeleteSessionId, setConfirmDeleteSessionId] = useState(null);
-  // Add display name state for personalization
-  const [displayName, setDisplayName] = useState(() => localStorage.getItem('displayName') || '');
-  
-  // WebSocket related state
-  const [wsConnection, setWsConnection] = useState(null);
-  const [connectionStatus, setConnectionStatus] = useState('disconnected'); // 'connected', 'connecting', 'disconnected', 'error'
+  const [showSessions, setShowSessions] = useState(false);
+
+  // WebSocket
+  const [connectionStatus, setConnectionStatus] = useState('disconnected');
   const [remoteTyping, setRemoteTyping] = useState(false);
+  // eslint-disable-next-line no-unused-vars
   const [messageQueue, setMessageQueue] = useState([]);
 
-  // Mitra Core Brain outputs
-  const [identityProfile, setIdentityProfile] = useState(null);
-  const [actionSuggestions, setActionSuggestions] = useState([]);
+  const [userName, setUserName] = useState(() => {
+    try { return localStorage.getItem('username') || ''; } catch { return ''; }
+  });
 
-  // System action confirmation (preview -> approve/deny -> execute)
-  const [systemActionModalOpen, setSystemActionModalOpen] = useState(false);
-  const [pendingSystemApproval, setPendingSystemApproval] = useState(null); // { approval_id, summary }
-  
   const chatWindowRef = useRef(null);
   const wsRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
-  const maxReconnectAttempts = 5;
+  const inputRef = useRef(null);
+  const initiativeTimerRef = useRef(null);
 
-  const saveSessions = (next) => {
-    setSessions(next);
-    localStorage.setItem('chat_sessions', JSON.stringify(next));
-  };
-
-  const saveMessagesForSession = (sid, msgs) => {
-    localStorage.setItem(`chat_messages_${sid}`, JSON.stringify(msgs));
-  };
-
-  const loadMessagesForSession = (sid) => {
-    const raw = localStorage.getItem(`chat_messages_${sid}`);
-    return raw ? JSON.parse(raw) : [];
-  };
+  const saveSessions = (next) => { setSessions(next); localStorage.setItem('chat_sessions', JSON.stringify(next)); };
+  const saveMessagesForSession = (sid, msgs) => { localStorage.setItem(`chat_messages_${sid}`, JSON.stringify(msgs)); };
+  const loadMessagesForSession = (sid) => { const raw = localStorage.getItem(`chat_messages_${sid}`); return raw ? JSON.parse(raw) : []; };
 
   const setPersonality = (type) => {
-    try {
-      setCurrentPersonality(type);
-      localStorage.setItem('defaultPersonality', type);
-      toast.success(`Personality switched to ${type}`);
-      setPreferencesOpen(false);
-    } catch (err) {
-      console.error('Failed to set personality:', err);
-      toast.error('Failed to switch personality');
-    }
+    setCurrentPersonality(type);
+    localStorage.setItem('defaultPersonality', type);
+    toast.success(`Switched to ${type}`);
+    setPreferencesOpen(false);
   };
 
-  // WebSocket connection management
+  // ─── WebSocket ────────────────────────────────────────────────────
   const connectWebSocket = useCallback(() => {
-    if (!api.isAuthenticated || !api.isAuthenticated()) {
-      return; // Only connect WebSocket for authenticated users
-    }
-
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      return; // Already connected
-    }
-
+    if (!api.isAuthenticated || !api.isAuthenticated()) return;
+    if (wsRef.current?.readyState === WebSocket.OPEN) return;
     setConnectionStatus('connecting');
-    
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${protocol}//${window.location.host}/ws/chat/${sessionId}`;
-      
       const token = localStorage.getItem('access_token');
       const ws = new WebSocket(`${wsUrl}?token=${encodeURIComponent(token)}`);
-      
-      ws.onopen = () => {
-        console.log('WebSocket connected');
-        setConnectionStatus('connected');
-        setWsConnection(ws);
-        wsRef.current = ws;
-        reconnectAttemptsRef.current = 0;
-        
-        // Process queued messages
-        if (messageQueue.length > 0) {
-          messageQueue.forEach(msg => {
-            if (ws.readyState === WebSocket.OPEN) {
-              ws.send(JSON.stringify(msg));
-            }
-          });
-          setMessageQueue([]);
-        }
-      };
-      
+      ws.onopen = () => { setConnectionStatus('connected'); wsRef.current = ws; reconnectAttemptsRef.current = 0; };
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          handleWebSocketMessage(data);
-        } catch (error) {
-          console.error('Error parsing WebSocket message:', error);
-        }
+          if (data.type === 'message') setMessages(prev => [...prev, { sender: 'ai', text: data.message, timestamp: data.timestamp || new Date().toISOString(), emotion: data.emotion || 'neutral' }]);
+          else if (data.type === 'typing_indicator') setRemoteTyping(data.typing);
+        } catch (e) { console.error('WS error:', e); }
       };
-      
       ws.onclose = (event) => {
-        console.log('WebSocket disconnected:', event.code, event.reason);
-        setConnectionStatus('disconnected');
-        setWsConnection(null);
-        wsRef.current = null;
-        setRemoteTyping(false);
-        
-        // Attempt to reconnect if not a normal closure
-        if (event.code !== 1000 && reconnectAttemptsRef.current < maxReconnectAttempts) {
-          const delay = Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000);
-          reconnectTimeoutRef.current = setTimeout(() => {
-            reconnectAttemptsRef.current++;
-            connectWebSocket();
-          }, delay);
+        setConnectionStatus('disconnected'); wsRef.current = null; setRemoteTyping(false);
+        if (event.code !== 1000 && reconnectAttemptsRef.current < 5) {
+          reconnectTimeoutRef.current = setTimeout(() => { reconnectAttemptsRef.current++; connectWebSocket(); }, Math.min(1000 * Math.pow(2, reconnectAttemptsRef.current), 30000));
         }
       };
-      
-      ws.onerror = (error) => {
-        console.error('WebSocket error:', error);
-        setConnectionStatus('error');
-        setError('Connection error. Messages will be sent via HTTP.');
-      };
-      
-    } catch (error) {
-      console.error('Failed to create WebSocket connection:', error);
-      setConnectionStatus('error');
-    }
-  }, [sessionId, messageQueue]);
+      ws.onerror = () => setConnectionStatus('error');
+    } catch { setConnectionStatus('error'); }
+  }, [sessionId]);
 
   const disconnectWebSocket = useCallback(() => {
-    if (reconnectTimeoutRef.current) {
-      clearTimeout(reconnectTimeoutRef.current);
-      reconnectTimeoutRef.current = null;
-    }
-    
-    if (wsRef.current) {
-      wsRef.current.close(1000, 'User disconnected');
-      wsRef.current = null;
-    }
-    
-    setWsConnection(null);
-    setConnectionStatus('disconnected');
-    setRemoteTyping(false);
-  }, []);
-
-  const handleWebSocketMessage = useCallback((data) => {
-    switch (data.type) {
-      case 'message':
-        const aiMessage = {
-          sender: 'ai',
-          text: data.message,
-          timestamp: data.timestamp || new Date().toISOString(),
-          emotion: data.emotion || 'neutral'
-        };
-        setMessages(prev => [...prev, aiMessage]);
-        break;
-        
-      case 'typing_indicator':
-        setRemoteTyping(data.typing);
-        break;
-        
-      case 'message_status':
-        if (data.status === 'error') {
-          setError(data.message || 'Message delivery failed');
-          toast.error('Message delivery failed');
-        }
-        break;
-        
-      case 'pong':
-        // Handle ping/pong for connection health
-        break;
-        
-      default:
-        console.log('Unknown WebSocket message type:', data.type);
-    }
+    if (reconnectTimeoutRef.current) { clearTimeout(reconnectTimeoutRef.current); reconnectTimeoutRef.current = null; }
+    if (wsRef.current) { wsRef.current.close(1000); wsRef.current = null; }
+    setConnectionStatus('disconnected'); setRemoteTyping(false);
   }, []);
 
   const sendWebSocketMessage = useCallback((message) => {
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify(message));
-      return true;
-    } else {
-      // Queue message for later delivery
-      setMessageQueue(prev => [...prev, message]);
-      return false;
-    }
+    if (wsRef.current?.readyState === WebSocket.OPEN) { wsRef.current.send(JSON.stringify(message)); return true; }
+    setMessageQueue(prev => [...prev, message]); return false;
   }, []);
 
-  const sendTypingIndicator = useCallback((typing) => {
-    sendWebSocketMessage({
-      type: 'typing_indicator',
-      typing: typing
-    });
-  }, [sendWebSocketMessage]);
-
+  // ─── Session management ───────────────────────────────────────────
   const createNewSession = () => {
     const newId = (window.crypto && window.crypto.randomUUID) ? window.crypto.randomUUID() : Math.random().toString(36).slice(2);
-    const newSession = { id: newId, title: 'New Chat', createdAt: new Date().toISOString() };
-    const next = [newSession, ...sessions];
-    saveSessions(next);
-    setSessionId(newId);
-    localStorage.setItem('sessionId', newId);
-    setMessages([]);
-    saveMessagesForSession(newId, []);
+    saveSessions([{ id: newId, title: 'New Chat', createdAt: new Date().toISOString() }, ...sessions]);
+    setSessionId(newId); localStorage.setItem('sessionId', newId);
+    setMessages([]); saveMessagesForSession(newId, []);
   };
 
   const deleteSession = async (sid) => {
-    // Keep a snapshot of previous sessions for potential restore
-    const prevSessions = [...sessions];
-
-    // Immediately update UI and local storage to reflect deletion
     const next = sessions.filter(s => s.id !== sid);
-    saveSessions(next);
-    localStorage.removeItem(`chat_messages_${sid}`);
-    setConfirmDeleteSessionId(null);
+    saveSessions(next); localStorage.removeItem(`chat_messages_${sid}`); setConfirmDeleteSessionId(null);
+    if (sid === sessionId) { next.length ? openSession(next[0].id) : createNewSession(); }
+    if (api.isAuthenticated && api.isAuthenticated()) { try { await api.deleteSession(sid); } catch {} }
+  };
 
-    // Handle current session deletion by switching or creating a new one
-    if (sid === sessionId) {
-      if (next.length) {
-        const first = next[0];
-        setSessionId(first.id);
-        localStorage.setItem('sessionId', first.id);
-        setMessages(loadMessagesForSession(first.id));
-      } else {
-        createNewSession();
+  const openSession = (sid) => { setSessionId(sid); localStorage.setItem('sessionId', sid); setMessages(loadMessagesForSession(sid)); setShowSessions(false); };
+
+  // ─── Slash commands (invisible — triggered via UI buttons) ────────
+  const handleSlashCommand = async (cmd) => {
+    try {
+      const result = await api.sendSlashCommand(cmd, sessionId);
+      if (result.action === 'clear_messages') { setMessages([]); saveMessagesForSession(sessionId, []); toast.success('Chat cleared'); return; }
+      if (result.action === 'set_personality' && result.personality) { setPersonality(result.personality); }
+      if (result.response) {
+        setMessages(prev => [...prev, { sender: 'ai', text: result.response, timestamp: new Date().toISOString(), isSystemMessage: true }]);
       }
+    } catch { toast.error('Command failed'); }
+  };
+
+  // ─── AI Initiative (proactive check-ins) ──────────────────────────
+  const checkForInitiative = useCallback(async () => {
+    try {
+      const result = await api.checkInitiative();
+      if (result?.initiative?.message) {
+        setInitiativeMessage(result.initiative);
+      }
+    } catch { /* silent */ }
+  }, []);
+
+  // ─── Main send handler ────────────────────────────────────────────
+  const handleSend = async (text) => {
+    const messageText = (text || input).trim();
+    if (!messageText) return;
+
+    // Background: check if this message contains a growth milestone
+    if (api.isAuthenticated && api.isAuthenticated()) {
+      api.recordMilestone(messageText).catch(() => {});
     }
 
-    // If not authenticated, perform local-only deletion and inform the user
-    const authenticated = (api.isAuthenticated && api.isAuthenticated());
-    if (!authenticated) {
-      toast.info('Chat deleted locally. Log in to delete server history.');
-      return;
-    }
+    // Dismiss any initiative message
+    setInitiativeMessage(null);
+
+    const userMessage = { sender: 'user', text: messageText, timestamp: new Date().toISOString() };
+    setMessages(prev => [...prev, userMessage]);
+    setInput('');
+    setIsStreaming(true);
+    setStreamPhase('thinking');
+    setSilenceMessage(null);
+    setEmotionPattern(null);
+    setCareMode(false);
+    setAutomationOffer(null);
+
+    const personalityMsgs = THINKING_MESSAGES[currentPersonality] || THINKING_MESSAGES.default;
+    setThinkingMessage(personalityMsgs[Math.floor(Math.random() * personalityMsgs.length)]);
+    sendWebSocketMessage({ type: 'typing_indicator', typing: true });
 
     try {
-      await api.deleteSession(sid);
-      toast.success('Chat session permanently deleted');
-    } catch (err) {
-      console.error('Error deleting session:', err);
-      // Keep local deletion, but inform user that server-side removal failed
-      toast.error('Server deletion failed. Chat removed locally only.');
-      // Optional: If you prefer to restore UI on failure, uncomment below:
-      // saveSessions(prevSessions);
-    }
-  };
+      await api.streamMessage(
+        messageText, sessionId, currentPersonality,
+        (eventType, data) => {
+          switch (eventType) {
+            case 'thinking':
+              setStreamPhase('thinking');
+              setThinkingMessage(data.message || 'Thinking…');
+              break;
 
-  const openSession = (sid) => {
-    setSessionId(sid);
-    localStorage.setItem('sessionId', sid);
-    const msgs = loadMessagesForSession(sid);
-    setMessages(msgs);
-  };
+            case 'silence':
+              setStreamPhase('silence');
+              setSilenceMessage(data.message);
+              break;
 
-  useEffect(() => {
-    // Load available personalities on component mount
-    const loadPersonalities = async () => {
-      try {
-        const personalities = await api.getAvailablePersonalities();
-        setAvailablePersonalities(personalities);
-      } catch (error) {
-        console.error('Error loading personalities:', error);
-        toast.error('Failed to load personalities');
-      }
-    };
-    loadPersonalities();
-    
-    // Load session messages or session-scoped chat history
-    const existingMsgs = loadMessagesForSession(sessionId);
-    if (existingMsgs.length) {
-      setMessages(existingMsgs);
-    } else {
-      const loadHistory = async () => {
-        try {
-          const resp = await api.getChatHistory(50, sessionId);
-          const history = Array.isArray(resp?.messages) ? resp.messages : [];
-          const mapped = history.map((m) => ({
-            sender: m.role === 'assistant' ? 'ai' : (m.role === 'user' ? 'user' : 'system'),
-            text: m.content,
-            timestamp: m.timestamp || new Date().toISOString(),
-            emotion: m.emotion || 'neutral'
-          }));
-          if (mapped.length) {
-            setMessages(mapped);
-            saveMessagesForSession(sessionId, mapped);
-            // initialize a session if none
-            if (!sessions.find(s => s.id === sessionId)) {
-              const title = mapped.find(m => m.sender === 'user')?.text?.slice(0, 30) || 'New Chat';
-              saveSessions([{ id: sessionId, title, createdAt: new Date().toISOString() }, ...sessions]);
-            }
+            case 'emotion':
+              if (data.primary_emotion) {
+                setCurrentEmotion({ emotion: data.primary_emotion, intensity: data.primary_intensity || 'medium' });
+                if (onEmotionChange) onEmotionChange(data.primary_emotion);
+                if (data.care_mode) setCareMode(true);
+              }
+              break;
+
+            case 'automation':
+              if (data.offer) setAutomationOffer(data.offer);
+              break;
+
+            case 'soul':
+              // Soul layer metadata — meaning moment glow, interjection indicator
+              if (data.has_meaning_moment) setHasMeaningMoment(true);
+              break;
+
+            case 'token':
+              setStreamPhase('streaming');
+              setSilenceMessage(null);
+              setMessages(prev => {
+                const updated = [...prev];
+                const lastIdx = updated.length - 1;
+                if (lastIdx >= 0 && updated[lastIdx].sender === 'ai' && updated[lastIdx]._streaming) {
+                  updated[lastIdx] = { ...updated[lastIdx], text: updated[lastIdx].text + data.text };
+                } else {
+                  updated.push({ sender: 'ai', text: data.text, timestamp: new Date().toISOString(), _streaming: true });
+                }
+                return updated;
+              });
+              break;
+
+            case 'pattern':
+              if (data.insight) setEmotionPattern(data);
+              break;
+
+            case 'done':
+              setStreamPhase('done');
+              setMessages(prev => {
+                const updated = [...prev];
+                const lastIdx = updated.length - 1;
+                if (lastIdx >= 0 && updated[lastIdx]._streaming) {
+                  updated[lastIdx] = { ...updated[lastIdx], text: data.full_response || updated[lastIdx].text, _streaming: false };
+                }
+                return updated;
+              });
+              break;
+
+            default: break;
           }
-        } catch (error) {
-          console.error('Error loading chat history:', error);
         }
-      };
-      loadHistory();
-    }
-
-    // Optional: fetch server sessions (if authenticated)
-    (async () => {
+      );
+    } catch (streamErr) {
+      // Fallback to non-streaming
       try {
-        const serverSessions = await api.listSessions();
-        if (Array.isArray(serverSessions?.sessions)) {
-          const merged = [...serverSessions.sessions.map(s => ({ id: s.id, title: 'Chat', createdAt: s.last_activity || new Date().toISOString() })), ...sessions];
-          // Deduplicate by id
-          const dedup = merged.reduce((acc, s) => acc.some(x => x.id === s.id) ? acc : [...acc, s], []);
-          saveSessions(dedup);
+        const response = await api.sendMessage(messageText, sessionId, currentPersonality);
+        await new Promise(r => setTimeout(r, 400));
+        setMessages(prev => [...prev, { sender: 'ai', text: response.response || "I'm here with you.", timestamp: new Date().toISOString() }]);
+        if (response.emotion?.primary_emotion) {
+          setCurrentEmotion({ emotion: response.emotion.primary_emotion, intensity: response.emotion.primary_intensity || 'medium' });
+          if (onEmotionChange) onEmotionChange(response.emotion.primary_emotion);
         }
-      } catch (e) {
-        // Ignore if not authenticated
+      } catch {
+        setMessages(prev => [...prev, { sender: 'ai', text: "I'm having trouble, but I'm still here with you.", timestamp: new Date().toISOString() }]);
       }
-    })();
+    } finally {
+      setIsStreaming(false); setStreamPhase(''); setSilenceMessage(null);
+      sendWebSocketMessage({ type: 'typing_indicator', typing: false });
+      if (hasMeaningMoment) setTimeout(() => setHasMeaningMoment(false), 8000);
+      inputRef.current?.focus();
+    }
+  };
 
-    // Initialize WebSocket connection for authenticated users
+  // ─── Effects ──────────────────────────────────────────────────────
+  useEffect(() => {
+    api.getAvailablePersonalities().then(setAvailablePersonalities).catch(() => {});
+    const existing = loadMessagesForSession(sessionId);
+    if (existing.length) setMessages(existing);
+    else {
+      api.getChatHistory(50, sessionId).then(resp => {
+        const mapped = (resp?.messages || []).map(m => ({ sender: m.role === 'assistant' ? 'ai' : 'user', text: m.content, timestamp: m.timestamp || new Date().toISOString() }));
+        if (mapped.length) { setMessages(mapped); saveMessagesForSession(sessionId, mapped); }
+      }).catch(() => {});
+    }
     connectWebSocket();
 
-    // Cleanup on unmount
-    return () => {
-      disconnectWebSocket();
-    };
+    // Start initiative polling (every 5 minutes)
+    initiativeTimerRef.current = setInterval(checkForInitiative, 5 * 60 * 1000);
+    // Check once after 30s
+    setTimeout(checkForInitiative, 30000);
+
+    return () => { disconnectWebSocket(); if (initiativeTimerRef.current) clearInterval(initiativeTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // WebSocket connection effect for session changes
   useEffect(() => {
-    if (api.isAuthenticated && api.isAuthenticated()) {
-      disconnectWebSocket();
-      setTimeout(() => connectWebSocket(), 100); // Small delay to ensure clean reconnection
-    }
+    if (api.isAuthenticated && api.isAuthenticated()) { disconnectWebSocket(); setTimeout(connectWebSocket, 100); }
   }, [sessionId, connectWebSocket, disconnectWebSocket]);
 
-  // Cleanup WebSocket on unmount
-  useEffect(() => {
-    return () => {
-      disconnectWebSocket();
-    };
-  }, [disconnectWebSocket]);
+  useEffect(() => { return () => disconnectWebSocket(); }, [disconnectWebSocket]);
+
+  // Auto-focus input on mount
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); }, []);
 
   useEffect(() => {
-    if (chatWindowRef.current) {
-      chatWindowRef.current.scrollTop = chatWindowRef.current.scrollHeight;
-    }
-  }, [messages]);
+    if (chatWindowRef.current) chatWindowRef.current.scrollTo({ top: chatWindowRef.current.scrollHeight, behavior: 'smooth' });
+  }, [messages, isStreaming, silenceMessage]);
 
   useEffect(() => {
-    // persist messages to session
     saveMessagesForSession(sessionId, messages);
-    // update session title from first user message
-    const firstUserMsg = messages.find(m => m.sender === 'user');
-    if (firstUserMsg) {
-      const title = firstUserMsg.text.slice(0, 30);
-      const next = sessions.map(s => s.id === sessionId ? { ...s, title } : s);
-      saveSessions(next);
-    }
+    const firstUser = messages.find(m => m.sender === 'user');
+    if (firstUser) saveSessions(sessions.map(s => s.id === sessionId ? { ...s, title: firstUser.text.slice(0, 30) } : s));
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [messages, sessionId]);
 
-  const handleSend = async () => {
-    if (!input.trim()) return;
+  const handleKeyDown = (e) => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } };
+  const emptyState = messages.length === 0 && !isStreaming;
+  const emotionGlow = EMOTION_GLOW[currentEmotion.emotion] || EMOTION_GLOW.neutral;
 
-    const userMessage = {
-      sender: 'user',
-      text: input.trim(),
-      timestamp: new Date().toISOString(),
-      emotion: currentEmotion.emotion
-    };
-
-    setMessages(prev => [...prev, userMessage]);
-    const messageText = input.trim();
-    setInput('');
-    setIsTyping(true);
-    setError(null);
-
-    // Send typing indicator via WebSocket
-    sendTypingIndicator(true);
-
-    try {
-      // Try WebSocket first for real-time delivery
-      const wsMessage = {
-        type: 'user_message',
-        message: messageText,
-        personality: currentPersonality,
-        session_id: sessionId,
-        emotion: currentEmotion.emotion
-      };
-
-      sendWebSocketMessage(wsMessage);
-      
-      // Always send via HTTP API as fallback and for persistence
-      const response = await api.sendMessage(messageText, sessionId, currentPersonality);
-
-      // WebSocket is typing/status-only in this build; always render the AI response from HTTP.
-      const aiMessage = {
-        sender: 'ai',
-        text: response.response || response.message || 'I apologize, but I couldn\'t process your message.',
-        timestamp: response.created_at || new Date().toISOString(),
-        emotion: response.emotion?.primary_emotion || response.detected_emotion || 'neutral'
-      };
-
-      // Presence delay: a tiny pacing so the assistant feels more "alive".
-      const intensity = response.emotion?.primary_intensity || 'medium';
-      const delayMs = intensity === 'high' ? 650 : 300;
-      await new Promise((resolve) => setTimeout(resolve, delayMs));
-      setMessages(prev => [...prev, aiMessage]);
-
-      // Update Mitra Core Brain panels.
-      if (response.identity_profile) setIdentityProfile(response.identity_profile);
-      if (Array.isArray(response.action_suggestions)) setActionSuggestions(response.action_suggestions);
-
-      // Align session ID with server in case it generated a new one
-      if (response.session_id && response.session_id !== sessionId) {
-        setSessionId(response.session_id);
-        localStorage.setItem('sessionId', response.session_id);
-        // Ensure session list contains the server session
-        if (!sessions.find(s => s.id === response.session_id)) {
-          const title = userMessage.text.slice(0, 30) || 'New Chat';
-          saveSessions([{ id: response.session_id, title, createdAt: response.created_at || new Date().toISOString() }, ...sessions]);
-        }
-      }
-      
-      if (response.emotion?.primary_emotion) {
-        setCurrentEmotion({
-          emotion: response.emotion.primary_emotion,
-          intensity: response.emotion.primary_intensity || 'medium'
-        });
-      } else if (response.detected_emotion) {
-        setCurrentEmotion({
-          emotion: response.detected_emotion,
-          intensity: response.emotion_intensity || 'medium'
-        });
-      }
-    } catch (error) {
-      console.error('Error sending message:', error);
-      setError('Failed to send message. Please try again.');
-      toast.error('Failed to send message');
-      
-      // Send error status via WebSocket if connected
-      if (connectionStatus === 'connected') {
-        sendWebSocketMessage({
-          type: 'error',
-          message: 'Failed to process message'
-        });
-      }
-
-      // Client-side fallback reply to keep conversation flowing
-      const fallbackText = "I'm having a bit of trouble right now, but I'm still here with you. What's on your mind?";
-      const aiMessage = {
-        sender: 'ai',
-        text: fallbackText,
-        timestamp: new Date().toISOString(),
-        emotion: 'neutral'
-      };
-      const nextMsgs = [...messages, aiMessage];
-      setMessages(nextMsgs);
-      saveMessagesForSession(sessionId, nextMsgs);
-    } finally {
-      setIsTyping(false);
-      sendTypingIndicator(false);
-    }
-  };
+  const careBg = careMode
+    ? 'radial-gradient(ellipse at 50% 40%, rgba(251,191,36,0.06), rgba(249,115,22,0.04), transparent 70%)'
+    : `radial-gradient(ellipse at 50% 30%, ${emotionGlow}, transparent 70%)`;
 
   return (
-    <div className="flex h-screen bg-cream dark:bg-dark-bg">
-      {/* Sidebar: Chat Sessions */}
-      <div className="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 p-4 flex flex-col">
-        <div className="flex items-center justify-between mb-3">
-          <h2 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Chats</h2>
-          <motion.button
-            whileHover={{ scale: 1.05 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={createNewSession}
-            className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-            title="New Chat"
-          >
-            <PlusCircle size={16} />
-          </motion.button>
-        </div>
-        <div className="flex-1 overflow-y-auto space-y-2">
-          {sessions.length === 0 ? (
-            <div className="text-xs text-gray-500 dark:text-gray-400">No chats yet</div>
-          ) : (
-            sessions.map(s => (
-              <div key={s.id} className={`group flex items-center justify-between px-2 py-2 rounded-lg cursor-pointer ${sessionId === s.id ? 'bg-cream dark:bg-gray-700' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`} onClick={() => openSession(s.id)}>
-                <div className="text-xs text-gray-700 dark:text-gray-300 truncate pr-2">{s.title}</div>
-                {confirmDeleteSessionId === s.id ? (
-                  <div className="flex items-center gap-2" onClick={(e) => e.stopPropagation()}>
-                    <button
-                      className="text-xs px-2 py-1 rounded bg-red-600 text-white"
-                      onClick={() => { deleteSession(s.id); setConfirmDeleteSessionId(null); }}
-                    >
-                      Confirm
-                    </button>
-                    <button
-                      className="text-xs px-2 py-1 rounded bg-gray-300 dark:bg-gray-600 text-gray-800 dark:text-gray-200"
-                      onClick={() => setConfirmDeleteSessionId(null)}
-                    >
-                      Cancel
-                    </button>
-                  </div>
-                ) : (
-                  <motion.button
-                    whileHover={{ scale: 1.1 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={(e) => { e.stopPropagation(); setConfirmDeleteSessionId(s.id); }}
-                    className="p-1 rounded bg-red-100 dark:bg-red-900 text-red-600 dark:text-red-300 opacity-0 group-hover:opacity-100"
-                    title="Delete"
-                  >
-                    <Trash2 size={14} />
-                  </motion.button>
-                )}
-              </div>
-            ))
-          )}
-        </div>
-      </div>
-
-      {/* Main Chat Area */}
-      <div className="flex-1 flex flex-col">
-        {/* Chat Header with Connection Status */}
-        <div className="flex items-center justify-between p-4 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-          <div className="flex items-center gap-3">
-            <h1 className="text-lg font-semibold text-gray-800 dark:text-gray-200">
-              Chat with {currentPersonality === 'mitra' ? 'Mitra' : currentPersonality}
-            </h1>
-            {remoteTyping && (
-              <div className="text-xs text-gray-500 dark:text-gray-400 italic">
-                Mitra is typing...
-              </div>
-            )}
-            {isTyping && !remoteTyping && (
-              <div className="text-xs text-gray-500 dark:text-gray-400 italic">
-                {currentEmotion.emotion === 'anxious' || currentEmotion.emotion === 'stressed'
-                  ? 'Take a slow breath...'
-                  : 'Thinking...'}
-              </div>
-            )}
-        </div>
-        <div className="flex items-center gap-2">
-            {/* Connection Status Indicator */}
-            <div className="flex items-center gap-2">
-              {connectionStatus === 'connected' ? (
-                <div className="flex items-center gap-1 text-green-600 dark:text-green-400">
-                  <Wifi size={16} />
-                  <span className="text-xs">Connected</span>
-                </div>
-              ) : connectionStatus === 'connecting' ? (
-                <div className="flex items-center gap-1 text-yellow-600 dark:text-yellow-400">
-                  <div className="animate-spin rounded-full h-4 w-4 border-2 border-yellow-600 border-t-transparent"></div>
-                  <span className="text-xs">Connecting...</span>
-                </div>
-              ) : connectionStatus === 'error' ? (
-                <div className="flex items-center gap-1 text-red-600 dark:text-red-400">
-                  <WifiOff size={16} />
-                  <span className="text-xs">Error</span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-1 text-gray-500 dark:text-gray-400">
-                  <WifiOff size={16} />
-                  <span className="text-xs">Offline</span>
-                </div>
-              )}
+    <div className={`flex h-full transition-all duration-1000 ${careMode ? 'care-active' : ''}`}
+      style={{ background: careBg }}>
+      {/* Sessions Panel */}
+      <AnimatePresence>
+        {showSessions && (
+          <motion.div initial={{ width: 0, opacity: 0 }} animate={{ width: 240, opacity: 1 }} exit={{ width: 0, opacity: 0 }} transition={{ duration: 0.25 }}
+            className="h-full glass-strong flex flex-col overflow-hidden border-r border-white/5">
+            <div className="flex items-center justify-between p-3 border-b border-white/5">
+              <span className="text-xs font-semibold" style={{ color: 'var(--mm-text-secondary)' }}>Conversations</span>
+              <motion.button whileHover={{ scale: 1.1 }} whileTap={{ scale: 0.95 }} onClick={createNewSession} className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: 'var(--mm-text-muted)' }}>
+                <PlusCircle size={14} />
+              </motion.button>
             </div>
-            {/* Settings Button */}
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={() => setPreferencesOpen(!preferencesOpen)}
-              className="p-2 rounded-full bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-gray-600"
-              title="Settings"
-            >
-              <Settings size={16} />
-            </motion.button>
-          </div>
-        </div>
-
-        {/* Identity / presence panel */}
-        {identityProfile && (
-          <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-            <div className="text-xs font-semibold text-gray-800 dark:text-gray-200">What I understand about you</div>
-            <div className="text-[11px] text-gray-600 dark:text-gray-400 mt-1">
-              Phase: {identityProfile.current_phase} · Decision style: {identityProfile.decision_style}
-              · Energy: {identityProfile.energy_pattern}
-            </div>
-            <div className="text-[11px] text-gray-600 dark:text-gray-400 mt-1">
-              Traits: {(identityProfile.core_traits || []).slice(0, 4).join(", ")}
-            </div>
-          </div>
-        )}
-
-        {/* Preferences Modal: Personality selection */}
-        {preferencesOpen && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg w-96 p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200">Choose Personality</h3>
-                <button
-                  onClick={() => setPreferencesOpen(false)}
-                  className="text-xs text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
-                >Close</button>
-              </div>
-              <div className="space-y-2">
-                {availablePersonalities.length === 0 ? (
-                  <div className="text-xs text-gray-500 dark:text-gray-400">Loading...</div>
-                ) : (
-                  availablePersonalities.map((p) => (
-                    <button
-                      key={p.type}
-                      onClick={() => setPersonality(p.type)}
-                      className={`w-full text-left px-3 py-2 rounded border text-xs ${currentPersonality === p.type ? 'border-blue-500 bg-blue-50 dark:bg-blue-900/20 text-blue-700 dark:text-blue-300' : 'border-gray-300 dark:border-gray-600 text-gray-800 dark:text-gray-200 hover:bg-gray-50 dark:hover:bg-gray-700'}`}
-                      title={p.description}
-                    >
-                      <div className="font-medium">{p.name || p.type}</div>
-                      <div className="text-[11px] text-gray-500 dark:text-gray-400">{p.description || `Switch to ${p.type}`}</div>
-                    </button>
-                  ))
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-        
-        {/* Chat window */}
-        <div ref={chatWindowRef} className="flex-1 overflow-y-auto p-6">
-          {messages.length === 0 ? (
-            <div className="text-center text-xs text-gray-500 dark:text-gray-400">Start a conversation with Mitra ✨</div>
-          ) : (
-            <AnimatePresence>
-              {messages.map((msg, idx) => (
-                <motion.div key={idx} initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -6 }} className={`mb-3 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`max-w-[70%] px-3 py-2 rounded-lg text-xs ${msg.sender === 'user' ? 'bg-blue-100 text-blue-900' : 'bg-gray-100 dark:bg-gray-700 text-gray-800 dark:text-gray-200'}`}>
-                    {msg.text}
-                  </div>
-                </motion.div>
+            <div className="flex-1 overflow-y-auto p-2 space-y-1">
+              {sessions.length === 0 ? (
+                <div className="text-[11px] p-3 text-center" style={{ color: 'var(--mm-text-muted)' }}>No conversations yet</div>
+              ) : sessions.map(s => (
+                <div key={s.id} className={`group flex items-center justify-between px-2.5 py-2 rounded-lg cursor-pointer transition-all ${sessionId === s.id ? 'bg-blue-500/10 border border-blue-500/20' : 'hover:bg-white/5 border border-transparent'}`}
+                  onClick={() => openSession(s.id)}>
+                  <div className="text-[11px] truncate pr-2" style={{ color: sessionId === s.id ? 'var(--mm-accent)' : 'var(--mm-text-secondary)' }}>{s.title}</div>
+                  {confirmDeleteSessionId === s.id ? (
+                    <div className="flex items-center gap-1" onClick={e => e.stopPropagation()}>
+                      <button className="text-[10px] px-1.5 py-0.5 rounded bg-red-500/80 text-white" onClick={() => deleteSession(s.id)}>Yes</button>
+                      <button className="text-[10px] px-1.5 py-0.5 rounded bg-white/10 text-gray-300" onClick={() => setConfirmDeleteSessionId(null)}>No</button>
+                    </div>
+                  ) : (
+                    <motion.button whileHover={{ scale: 1.1 }} onClick={e => { e.stopPropagation(); setConfirmDeleteSessionId(s.id); }}
+                      className="p-1 rounded opacity-0 group-hover:opacity-100 hover:bg-red-500/20 transition-all" style={{ color: 'var(--mm-text-muted)' }}>
+                      <Trash2 size={11} />
+                    </motion.button>
+                  )}
+                </div>
               ))}
-            </AnimatePresence>
-          )}
-        </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
-        {/* Action suggestions */}
-        {Array.isArray(actionSuggestions) && actionSuggestions.length > 0 && (
-          <div className="p-4 border-t border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800">
-            <div className="text-xs font-semibold text-gray-800 dark:text-gray-200 mb-2">Next actions</div>
-            <div className="flex flex-wrap gap-2">
-              {actionSuggestions
-                .filter((a) => a?.kind === 'system')
-                .map((a, idx) => (
-                  <button
-                    key={`${a.action_type}-${idx}`}
-                    className="text-xs px-3 py-2 rounded bg-blue-600 text-white hover:opacity-90"
-                    onClick={async () => {
-                      try {
-                        const resp = await api.previewSystemAction(a.action_type, a.params || {});
-                        setPendingSystemApproval({ approval_id: resp.approval_id, summary: resp.summary });
-                        setSystemActionModalOpen(true);
-                      } catch (e) {
-                        toast.error('Failed to request action preview');
-                      }
-                    }}
-                    title={a.summary}
-                  >
-                    {a.action_type}
-                  </button>
-                ))}
+      {/* Main Chat */}
+      <div className="flex-1 flex flex-col h-full">
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-3 border-b border-white/5" style={{ background: 'rgba(10, 14, 26, 0.5)', backdropFilter: 'blur(20px)' }}>
+          <div className="flex items-center gap-3">
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setShowSessions(!showSessions)}
+              className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: 'var(--mm-text-muted)' }}>
+              <PlusCircle size={16} />
+            </motion.button>
+            <div>
+              <h1 className="text-sm font-medium flex items-center gap-1.5" style={{ color: 'var(--mm-text-primary)' }}>
+                <Sparkles size={13} className="text-blue-400" style={{ filter: 'drop-shadow(0 0 4px rgba(59,130,246,0.4))' }} />
+                {currentPersonality.charAt(0).toUpperCase() + currentPersonality.slice(1)}
+              </h1>
+              <AnimatePresence>
+                {(isStreaming || remoteTyping) && (
+                  <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-[10px] italic flex items-center gap-1"
+                    style={{ color: streamPhase === 'silence' ? '#a78bfa' : 'var(--mm-accent)' }}>
+                    {streamPhase === 'silence' && <Moon size={10} />}
+                    {streamPhase === 'streaming' && <Zap size={10} />}
+                    {streamPhase === 'silence' ? silenceMessage || 'Listening…' :
+                     streamPhase === 'streaming' ? 'Speaking…' :
+                     thinkingMessage || 'Thinking…'}
+                  </motion.p>
+                )}
+              </AnimatePresence>
             </div>
           </div>
-        )}
 
-        {/* Input */}
-        <div className="p-4 border-t border-gray-200 dark:border-gray-700">
           <div className="flex items-center gap-2">
-            <input
-              value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Type your message..."
-              className="flex-1 text-xs px-3 py-2 rounded border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-800 dark:text-gray-200"
-            />
-            <motion.button
-              whileHover={{ scale: 1.05 }}
-              whileTap={{ scale: 0.95 }}
-              onClick={handleSend}
-              className="px-3 py-2 rounded bg-blue-600 text-white text-xs"
-            >
-              <Send size={14} />
+            {connectionStatus === 'connected' ? <Wifi size={12} className="text-emerald-400" /> :
+             connectionStatus === 'connecting' ? <div className="w-3 h-3 rounded-full border border-yellow-400 border-t-transparent animate-spin" /> :
+             <WifiOff size={12} style={{ color: 'var(--mm-text-muted)' }} />}
+
+            <div className="flex items-center gap-1 px-2 py-1 rounded-md" style={{ background: 'rgba(34, 197, 94, 0.08)', border: '1px solid rgba(34, 197, 94, 0.15)' }}>
+              <Lock size={10} className="text-emerald-400" /><span className="text-[9px] font-medium text-emerald-400">Encrypted</span>
+            </div>
+
+            {/* Action buttons — replacing slash commands */}
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setDeepPresenceMode(!deepPresenceMode)}
+              className={`p-1.5 rounded-lg transition-colors ${deepPresenceMode ? 'bg-blue-500/15' : 'hover:bg-blue-500/10'}`}
+              style={{ color: deepPresenceMode ? 'var(--mm-accent)' : 'var(--mm-text-muted)' }} title="Deep Presence">
+              <Eye size={14} />
+            </motion.button>
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => handleSlashCommand('/calm')}
+              className="p-1.5 rounded-lg hover:bg-purple-500/10 transition-colors" style={{ color: 'var(--mm-text-muted)' }} title="Calm mode">
+              <Moon size={14} />
+            </motion.button>
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => handleSlashCommand('/focus')}
+              className="p-1.5 rounded-lg hover:bg-blue-500/10 transition-colors" style={{ color: 'var(--mm-text-muted)' }} title="Focus mode">
+              <Target size={14} />
+            </motion.button>
+
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setPreferencesOpen(!preferencesOpen)}
+              className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: 'var(--mm-text-muted)' }}>
+              <Settings size={14} />
             </motion.button>
           </div>
         </div>
 
-        {/* System action confirmation modal */}
-        {systemActionModalOpen && pendingSystemApproval && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/30">
-            <div className="bg-white dark:bg-gray-800 rounded-lg shadow-lg w-[520px] p-4">
-              <h3 className="text-sm font-semibold text-gray-800 dark:text-gray-200 mb-2">
-                Confirm system action
-              </h3>
-              <p className="text-xs text-gray-600 dark:text-gray-300 mb-4">{pendingSystemApproval.summary}</p>
-              <div className="flex gap-2">
-                <button
-                  className="flex-1 bg-blue-600 text-white rounded-xl px-3 py-2 text-sm font-semibold hover:opacity-90"
-                  onClick={async () => {
-                    try {
-                      const resp = await api.commitSystemAction(pendingSystemApproval.approval_id, true);
-                      if (resp?.ok) toast.success('Action executed');
-                      else toast.error(resp?.error || 'Action failed');
-                    } catch (e) {
-                      toast.error('Execution failed');
-                    } finally {
-                      setSystemActionModalOpen(false);
-                      setPendingSystemApproval(null);
-                    }
-                  }}
+        {/* Personality Modal */}
+        <AnimatePresence>
+          {preferencesOpen && (
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="fixed inset-0 z-50 flex items-center justify-center"
+              style={{ background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(4px)' }} onClick={() => setPreferencesOpen(false)}>
+              <motion.div initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+                className="glass-elevated rounded-2xl w-96 p-5" onClick={e => e.stopPropagation()}>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-sm font-semibold" style={{ color: 'var(--mm-text-primary)' }}>Choose Personality</h3>
+                  <button onClick={() => setPreferencesOpen(false)} className="text-xs" style={{ color: 'var(--mm-text-muted)' }}>Close</button>
+                </div>
+                <div className="space-y-2">
+                  {availablePersonalities.length === 0 ? <div className="text-xs" style={{ color: 'var(--mm-text-muted)' }}>Loading...</div> :
+                    availablePersonalities.map(p => (
+                      <motion.button key={p.type} whileHover={{ scale: 1.01 }} whileTap={{ scale: 0.99 }} onClick={() => setPersonality(p.type)}
+                        className={`w-full text-left px-4 py-3 rounded-xl border transition-all ${currentPersonality === p.type ? 'border-blue-500/40 bg-blue-500/10' : 'border-white/5 hover:border-white/10'}`}>
+                        <div className="text-xs font-medium" style={{ color: currentPersonality === p.type ? 'var(--mm-accent)' : 'var(--mm-text-primary)' }}>{p.name || p.type}</div>
+                        <div className="text-[10px] mt-0.5" style={{ color: 'var(--mm-text-muted)' }}>{p.description || `Switch to ${p.type}`}</div>
+                      </motion.button>
+                    ))
+                  }
+                </div>
+
+                {/* Memory + Clear actions inside settings */}
+                <div className="mt-4 pt-3 border-t border-white/5 space-y-2">
+                  <motion.button whileHover={{ scale: 1.01 }} onClick={() => { handleSlashCommand('/memory'); setPreferencesOpen(false); }}
+                    className="w-full text-left px-4 py-2.5 rounded-xl border border-white/5 hover:border-purple-500/20 hover:bg-purple-500/5 transition-all flex items-center gap-2">
+                    <Brain size={14} className="text-purple-400" />
+                    <div>
+                      <div className="text-xs font-medium" style={{ color: 'var(--mm-text-primary)' }}>What I remember</div>
+                      <div className="text-[10px]" style={{ color: 'var(--mm-text-muted)' }}>View stored memories</div>
+                    </div>
+                  </motion.button>
+                  <motion.button whileHover={{ scale: 1.01 }} onClick={() => { handleSlashCommand('/clear'); setPreferencesOpen(false); }}
+                    className="w-full text-left px-4 py-2.5 rounded-xl border border-white/5 hover:border-red-500/20 hover:bg-red-500/5 transition-all flex items-center gap-2">
+                    <Trash2 size={14} className="text-red-400" />
+                    <div>
+                      <div className="text-xs font-medium" style={{ color: 'var(--mm-text-primary)' }}>Clear chat</div>
+                      <div className="text-[10px]" style={{ color: 'var(--mm-text-muted)' }}>Start fresh</div>
+                    </div>
+                  </motion.button>
+                </div>
+              </motion.div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Chat Area */}
+        <div ref={chatWindowRef} className="flex-1 overflow-y-auto px-6 py-4">
+          {/* Initiative Message (AI reaches out first) */}
+          <AnimatePresence>
+            {initiativeMessage && emptyState && (
+              <motion.div initial={{ opacity: 0, y: 12 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.6 }}
+                className="mb-6 flex justify-start">
+                <div className="max-w-[70%] px-4 py-3 bubble-mitra relative">
+                  <button onClick={() => setInitiativeMessage(null)} className="absolute top-2 right-2 p-0.5 rounded-full hover:bg-white/10" style={{ color: 'var(--mm-text-muted)' }}>
+                    <X size={10} />
+                  </button>
+                  <p className="text-[13px] leading-relaxed pr-4" style={{ color: 'var(--mm-text-primary)' }}>{initiativeMessage.message}</p>
+                  <p className="text-[9px] mt-1.5 opacity-40">
+                    Mitra checked in • {initiativeMessage.tier === 'reflection' ? 'thinking about you' : initiativeMessage.tier === 'next_morning' ? 'good morning' : 'just now'}
+                  </p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Deep Presence Mode overlay */}
+          <AnimatePresence>
+            {deepPresenceMode && emptyState && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} transition={{ duration: 1.5 }}
+                className="h-full flex flex-col items-center justify-center text-center deep-presence-container">
+                <motion.div animate={{ scale: [1, 1.06, 1], opacity: [0.4, 0.8, 0.4] }}
+                  transition={{ duration: 5, repeat: Infinity, ease: "easeInOut" }}
+                  className="w-24 h-24 mx-auto rounded-full flex items-center justify-center mb-8"
+                  style={{ background: 'radial-gradient(circle, rgba(59, 130, 246, 0.15), rgba(139, 92, 246, 0.08), transparent)', boxShadow: '0 0 60px rgba(59, 130, 246, 0.12)' }}>
+                  <Heart size={28} className="text-blue-400" style={{ opacity: 0.5, filter: 'drop-shadow(0 0 8px rgba(59,130,246,0.3))' }} />
+                </motion.div>
+                <motion.p initial={{ opacity: 0 }} animate={{ opacity: [0.3, 0.6, 0.3] }} transition={{ duration: 4, repeat: Infinity }}
+                  className="text-sm font-light" style={{ color: 'var(--mm-text-muted)', letterSpacing: '0.05em' }}>
+                  I'm here
+                </motion.p>
+                <motion.button initial={{ opacity: 0 }} animate={{ opacity: 0.3 }} whileHover={{ opacity: 0.7 }}
+                  onClick={() => setDeepPresenceMode(false)}
+                  className="mt-12 text-[10px] px-3 py-1.5 rounded-full border border-white/5 hover:border-white/10 transition-all"
+                  style={{ color: 'var(--mm-text-muted)' }}>
+                  Start talking
+                </motion.button>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Empty State — personalized presence */}
+          {emptyState && !initiativeMessage && !deepPresenceMode && (
+            <div className="h-full flex flex-col items-center justify-center text-center">
+              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8 }} className="space-y-6 max-w-sm w-full px-4">
+                {/* Breathing orb */}
+                <motion.div
+                  animate={{ scale: [1, 1.06, 1], opacity: [0.7, 1, 0.7] }}
+                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                  className="w-16 h-16 mx-auto rounded-full flex items-center justify-center relative"
+                  style={{
+                    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))',
+                    border: '1px solid rgba(59, 130, 246, 0.2)',
+                    boxShadow: `0 0 30px ${emotionGlow}, 0 0 60px rgba(59, 130, 246, 0.08)`,
+                  }}>
+                  <Sparkles size={24} className="text-blue-400" />
+                </motion.div>
+
+                {/* Personalized greeting */}
+                <div>
+                  <motion.p
+                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
+                    className="text-lg font-light mb-2"
+                    style={{ color: 'var(--mm-text-primary)' }}
+                  >
+                    {userName
+                      ? `Hey ${userName}… I'm here.`
+                      : "Hey… I'm here whenever you need me."}
+                  </motion.p>
+                  <motion.p
+                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
+                    className="presence-text text-sm"
+                  >
+                    {currentEmotion.emotion !== 'neutral'
+                      ? `You seem ${currentEmotion.emotion} today. I'm listening.`
+                      : "Share anything. It stays between us."}
+                  </motion.p>
+                </div>
+
+                {/* Quick prompts */}
+                <motion.div
+                  className="flex flex-wrap justify-center gap-2"
+                  initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}
                 >
-                  Allow
-                </button>
-                <button
-                  className="flex-1 bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 rounded-xl px-3 py-2 text-sm font-semibold hover:opacity-90"
-                  onClick={async () => {
-                    try {
-                      await api.commitSystemAction(pendingSystemApproval.approval_id, false);
-                      toast.info('Action denied');
-                    } catch (e) {
-                      toast.error('Failed to deny');
-                    } finally {
-                      setSystemActionModalOpen(false);
-                      setPendingSystemApproval(null);
-                    }
-                  }}
-                >
-                  Deny
+                  {QUICK_PROMPTS.map((prompt, i) => (
+                    <motion.button key={i} className="prompt-chip" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                      onClick={() => handleSend(prompt.text)}
+                      initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 + i * 0.08 }}>
+                      <span>{prompt.emoji}</span><span>{prompt.text}</span>
+                    </motion.button>
+                  ))}
+                </motion.div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* Messages */}
+          <AnimatePresence>
+            {messages.map((msg, idx) => (
+              <motion.div key={idx} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}
+                className={`mb-4 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
+                <div className={`max-w-[65%] px-4 py-3 relative ${
+                  msg.isSystemMessage ? 'bubble-system' : msg.sender === 'user' ? 'bubble-user' : 'bubble-mitra'
+                } ${msg._streaming ? 'streaming-cursor' : ''} ${hasMeaningMoment && idx === messages.length - 1 && msg.sender === 'ai' ? 'meaning-glow' : ''}`}>
+                  <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--mm-text-primary)' }}>{msg.text}</p>
+                  <p className="text-[9px] mt-1.5 opacity-40">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                </div>
+              </motion.div>
+            ))}
+          </AnimatePresence>
+
+          {/* Silence indicator (replaces typing dots for heavy emotions) */}
+          <AnimatePresence>
+            {isStreaming && streamPhase === 'silence' && silenceMessage && (
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-4 flex justify-start">
+                <div className="bubble-mitra">
+                  <p className="text-[12px] italic" style={{ color: 'var(--mm-accent)' }}>{silenceMessage}</p>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Typing dots (only during thinking phase) */}
+          <AnimatePresence>
+            {isStreaming && streamPhase === 'thinking' && (
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="mb-4 flex justify-start">
+                <div className="bubble-mitra">
+                  <div className="typing-indicator"><div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" /></div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        {/* Emotion Pattern Insight (inline, natural) */}
+        <AnimatePresence>
+          {emotionPattern && (
+            <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="mx-5 mb-2">
+              <div className="px-4 py-2.5 rounded-xl flex items-start gap-2"
+                style={{ background: 'linear-gradient(135deg, rgba(139, 92, 246, 0.06), rgba(59, 130, 246, 0.04))', border: '1px solid rgba(139, 92, 246, 0.12)' }}>
+                <Brain size={12} className="text-purple-400 mt-0.5 flex-shrink-0" />
+                <p className="text-[11px] leading-relaxed" style={{ color: 'var(--mm-text-secondary)' }}>{emotionPattern.insight}</p>
+                <button onClick={() => setEmotionPattern(null)} className="p-0.5 rounded-full hover:bg-white/10 flex-shrink-0" style={{ color: 'var(--mm-text-muted)' }}>
+                  <X size={10} />
                 </button>
               </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Automation Offer Card — gentle collaboration, not tool push */}
+        <AnimatePresence>
+          {automationOffer && !isStreaming && (
+            <motion.div
+              initial={{ opacity: 0, y: 10, scale: 0.97 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: -8, scale: 0.97 }}
+              transition={{ duration: 0.4 }}
+              className="mx-5 mb-2"
+            >
+              <div className="automation-card px-4 py-3 rounded-2xl flex items-start gap-3"
+                style={{
+                  background: 'linear-gradient(135deg, rgba(139,92,246,0.08), rgba(59,130,246,0.06))',
+                  border: '1px solid rgba(139,92,246,0.18)',
+                }}>
+                <Sparkles size={14} className="text-purple-400 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <p className="text-[12px] leading-relaxed" style={{ color: 'var(--mm-text-secondary)' }}>
+                    {automationOffer.text}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => {
+                        handleSend(automationOffer.button_label);
+                        setAutomationOffer(null);
+                      }}
+                      className="text-[11px] px-3 py-1.5 rounded-lg font-medium"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(139,92,246,0.3), rgba(59,130,246,0.3))',
+                        border: '1px solid rgba(139,92,246,0.3)',
+                        color: '#c4b5fd',
+                      }}
+                    >
+                      {automationOffer.button_label}
+                    </motion.button>
+                    <button
+                      onClick={() => setAutomationOffer(null)}
+                      className="text-[10px] px-2 py-1.5 rounded-lg"
+                      style={{ color: 'var(--mm-text-muted)' }}
+                    >
+                      Maybe later
+                    </button>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setAutomationOffer(null)}
+                  className="p-0.5 rounded-full hover:bg-white/10 flex-shrink-0"
+                  style={{ color: 'var(--mm-text-muted)' }}
+                >
+                  <X size={10} />
+                </button>
+              </div>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Quick prompts (early in conversation) */}
+        {messages.length > 0 && messages.length < 4 && !isStreaming && (
+          <div className="px-5 pb-2">
+            <div className="flex gap-2 overflow-x-auto" style={{ scrollbarWidth: 'none' }}>
+              {QUICK_PROMPTS.map((prompt, i) => (
+                <motion.button key={i} className="prompt-chip text-[11px] flex-shrink-0" whileHover={{ scale: 1.03 }} whileTap={{ scale: 0.97 }} onClick={() => handleSend(prompt.text)}>
+                  <span>{prompt.emoji}</span><span>{prompt.text}</span>
+                </motion.button>
+              ))}
             </div>
           </div>
         )}
+
+        {/* Input Area */}
+        <div className="px-5 py-4 border-t border-white/5" style={{ background: 'rgba(10, 14, 26, 0.5)', backdropFilter: 'blur(20px)' }}>
+          <div className="flex items-center gap-3">
+            <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
+              placeholder={isStreaming ? "Mitra is responding…" : "What's on your mind…"}
+              className="input-glass flex-1" disabled={isStreaming} autoFocus />
+            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => handleSend()} disabled={!input.trim() || isStreaming}
+              className="p-3 rounded-xl transition-all"
+              style={{
+                background: input.trim() && !isStreaming ? 'linear-gradient(135deg, var(--mm-accent), var(--mm-accent-purple))' : 'rgba(71, 85, 105, 0.3)',
+                color: 'white', opacity: input.trim() && !isStreaming ? 1 : 0.5,
+                boxShadow: input.trim() && !isStreaming ? '0 4px 16px rgba(59, 130, 246, 0.3)' : 'none',
+              }}>
+              <Send size={16} />
+            </motion.button>
+          </div>
+          <div className="relative mt-3">
+            <div className={`heartbeat-line ${isStreaming ? 'streaming-active' : ''}`} />
+          </div>
+        </div>
       </div>
     </div>
   );
 }
 
 export default Chat;
-
-// Preferences Modal UI
-// Rendered above return for clarity; using conditional within JSX
