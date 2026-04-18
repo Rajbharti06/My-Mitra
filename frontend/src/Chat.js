@@ -8,10 +8,10 @@ import VoiceInput from './components/VoiceInput';
 // ─── Thinking messages (per-personality) ────────────────────────────────
 const THINKING_MESSAGES = {
   mitra: ["Hmm… let me sit with that…", "I hear you…", "Taking that in…"],
-  default: ["Hmm… thinking…", "Give me a sec…", "Let me think…"],
-  mentor: ["Let me reflect on that…", "That's thoughtful…", "In my experience…"],
-  motivator: ["Love that energy!…", "Great question!…", "Let's figure this out!"],
-  coach: ["Analyzing…", "Structuring my thoughts…", "Processing…"],
+  default: ["Hmm…", "Give me a sec…", "Let me think…"],
+  mentor: ["Let me reflect on that…", "Hmm…", "One sec…"],
+  motivator: ["Okay…", "Yeah…", "Alright…"],
+  coach: ["Right…", "Got it…", "Okay…"],
 };
 
 const QUICK_PROMPTS = [
@@ -349,6 +349,19 @@ function Chat({ onEmotionChange }) {
     initiativeTimerRef.current = setInterval(checkForInitiative, 5 * 60 * 1000);
     // Check once after 30s
     setTimeout(checkForInitiative, 30000);
+
+    // First-time welcome: if the user has never chatted, Mitra greets them
+    const hasGreeted = localStorage.getItem('mitra_greeted');
+    if (!hasGreeted) {
+      const name = localStorage.getItem('username') || '';
+      const greeting = name
+        ? `Hi ${name} — I'm Mitra. I'm really glad you're here. What's on your mind today?`
+        : `Hey — I'm Mitra. I'm here whenever you're ready to talk. What's going on?`;
+      setTimeout(() => {
+        setInitiativeMessage({ message: greeting, tier: 'welcome' });
+        localStorage.setItem('mitra_greeted', 'true');
+      }, 1800);
+    }
 
     return () => { disconnectWebSocket(); if (initiativeTimerRef.current) clearInterval(initiativeTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps

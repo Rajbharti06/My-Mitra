@@ -40,6 +40,124 @@ function formatRelative(ts) {
   return d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
+// 30-day mood calendar heatmap — inspired by Daylio
+function MoodCalendar({ history }) {
+  const [hovered, setHovered] = useState(null);
+
+  const calDays = React.useMemo(() => {
+    const days = [];
+    const now = new Date();
+    for (let i = 29; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(now.getDate() - i);
+      const dateStr = d.toISOString().split('T')[0];
+      const dayEntries = history.filter(h => h.timestamp?.startsWith(dateStr));
+      const primary = dayEntries[0]?.mood ?? null;
+      const cfg = primary ? MOODS.find(m => m.id === primary) : null;
+      days.push({
+        date: dateStr,
+        dayNum: d.getDate(),
+        isToday: i === 0,
+        isSunday: d.getDay() === 0,
+        entries: dayEntries.length,
+        mood: primary,
+        color: cfg?.color ?? null,
+        emoji: cfg?.emoji ?? null,
+        label: d.toLocaleDateString(undefined, { weekday: 'short', month: 'short', day: 'numeric' }),
+        allMoods: dayEntries.map(e => MOODS.find(m => m.id === e.mood)?.emoji).filter(Boolean).join(' '),
+      });
+    }
+    return days;
+  }, [history]);
+
+  const weeks = ['S', 'M', 'T', 'W', 'T', 'F', 'S'];
+
+  return (
+    <div style={{ position: 'relative' }}>
+      {/* Day-of-week labels */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3, marginBottom: 4 }}>
+        {weeks.map((w, i) => (
+          <div key={i} style={{ textAlign: 'center', fontSize: '0.58rem', color: 'var(--mm-text-muted)', fontWeight: 500 }}>{w}</div>
+        ))}
+      </div>
+
+      {/* Calendar grid — 30 days laid out by weekday */}
+      {(() => {
+        // Fill offset so days start on correct weekday
+        const firstDay = new Date(calDays[0].date).getDay(); // 0=Sun
+        const cells = [...Array(firstDay).fill(null), ...calDays];
+        return (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 3 }}>
+            {cells.map((day, idx) => (
+              <motion.div
+                key={idx}
+                whileHover={day ? { scale: 1.18 } : {}}
+                onMouseEnter={() => day?.entries > 0 && setHovered(day)}
+                onMouseLeave={() => setHovered(null)}
+                style={{
+                  aspectRatio: '1',
+                  borderRadius: 5,
+                  background: day?.color
+                    ? `${day.color}44`
+                    : day ? 'rgba(71,85,105,0.12)' : 'transparent',
+                  border: day?.isToday
+                    ? `1.5px solid ${day.color || 'var(--mm-accent)'}99`
+                    : '1px solid transparent',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: day?.emoji ? '0.75rem' : '0.6rem',
+                  color: day?.color ?? 'var(--mm-text-muted)',
+                  cursor: day?.entries > 0 ? 'pointer' : 'default',
+                  opacity: day ? 1 : 0,
+                  fontWeight: day?.isToday ? 700 : 400,
+                  position: 'relative',
+                  transition: 'background 0.2s',
+                }}
+              >
+                {day?.emoji || (day ? day.dayNum : '')}
+              </motion.div>
+            ))}
+          </div>
+        );
+      })()}
+
+      {/* Hover tooltip */}
+      <AnimatePresence>
+        {hovered && (
+          <motion.div
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0 }}
+            style={{
+              position: 'absolute', bottom: '110%', left: '50%', transform: 'translateX(-50%)',
+              background: 'rgba(15,23,42,0.95)', backdropFilter: 'blur(12px)',
+              border: '1px solid var(--mm-border)', borderRadius: 10,
+              padding: '0.5rem 0.85rem', zIndex: 10, whiteSpace: 'nowrap',
+              boxShadow: 'var(--mm-shadow-md)',
+            }}
+          >
+            <p style={{ fontSize: '0.72rem', fontWeight: 500, color: 'var(--mm-text-primary)', marginBottom: 2 }}>{hovered.label}</p>
+            <p style={{ fontSize: '0.68rem', color: hovered.color ?? 'var(--mm-text-muted)' }}>
+              {hovered.allMoods} {hovered.entries} check-in{hovered.entries !== 1 ? 's' : ''}
+            </p>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Legend */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginTop: '0.75rem' }}>
+        {MOODS.map(m => (
+          <div key={m.id} style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+            <div style={{ width: 10, height: 10, borderRadius: 3, background: `${m.color}55`, border: `1px solid ${m.color}44` }} />
+            <span style={{ fontSize: '0.62rem', color: 'var(--mm-text-muted)' }}>{m.label}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const MoodTooltip = ({ active, payload }) => {
   if (!active || !payload?.length) return null;
   const entry = payload[0];
@@ -238,6 +356,16 @@ export default function MoodTracking() {
 
         {view === 'history' && (
           <motion.div key="history" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} className="space-y-4">
+            {/* 30-day calendar heatmap */}
+            <div className="glass-elevated rounded-2xl p-4 space-y-3">
+              <p className="text-[11px] uppercase tracking-wide font-medium" style={{ color: 'var(--mm-text-muted)' }}>30-day overview</p>
+              {history.length === 0 ? (
+                <p className="text-xs py-4 text-center" style={{ color: 'var(--mm-text-muted)' }}>No check-ins yet — start logging your mood!</p>
+              ) : (
+                <MoodCalendar history={history} />
+              )}
+            </div>
+
             {/* 7-day trend */}
             <div className="glass-elevated rounded-2xl p-4 space-y-3">
               <p className="text-[11px] uppercase tracking-wide font-medium" style={{ color: 'var(--mm-text-muted)' }}>7-day trend</p>

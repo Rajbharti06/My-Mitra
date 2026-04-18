@@ -101,6 +101,9 @@ export const login = async (username, password) => {
     throw new Error('Login response missing token');
 };
 
+export const createJournalEntry = (content, mood) =>
+    request('/journals', { method: 'POST', body: JSON.stringify({ content, mood }) });
+
 export const register = async (username, password) => {
     const resp = await fetch(`${API_BASE}/register`, {
         method: 'POST',

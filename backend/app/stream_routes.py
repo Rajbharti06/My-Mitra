@@ -57,19 +57,56 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # ─── Presence filter ─────────────────────────────────────────────────────
-_SYSTEM_LEAK_PHRASES = [
+# Hard failures: replace the whole response (identity leaks, mode leaks)
+_HARD_FAIL_PHRASES = [
     "technical difficulties", "technical trouble", "technical issue",
     "tools are offline", "offline for a moment", "connectivity issues",
     "i'm in mitra", "i'm in mentor", "i'm in motivator", "i'm in coach", "i'm in default",
     "mode but", "mode, but", "personality mode",
     "language model", "as an ai", "i am an ai", "i'm an ai",
     "i'm a bot", "i'm a chatbot", "as a large language",
-    # Over-performed "deep" phrases
+]
+
+# Soft strips: these are AI-isms — strip the sentence that contains them
+_SOFT_STRIP_PHRASES = [
     "i need you to hear this",
     "the fact that you're even thinking",
     "there's something real in what you just said",
     "you're more aware of this than you think",
+    "your feelings are valid",
+    "it's completely normal to feel",
+    "i want you to know that",
+    "i'm here to support you",
+    "i'm here to help you",
+    "based on what you've shared",
+    "based on your history",
+    "i notice that you",
+    "great question",
+    "that's a great point",
+    "absolutely!",
+    "certainly!",
+    "of course!",
+    # Echo/mirroring patterns — AI almost always does these, humans almost never do
+    "it sounds like you're feeling",
+    "it sounds like you feel",
+    "i can hear that you're",
+    "i can hear that you are",
+    "i can tell that you",
+    "i sense that you",
+    "what i'm hearing is",
+    "i want to acknowledge",
+    "i'm glad you brought",
+    "it's important to remember",
+    "it's important to note",
+    "i'd like to remind you",
+    "as your friend, i",
+    "as your companion, i",
+    "i'm here for you",
+    "remember that i'm always here",
 ]
+
+# Keep this for backwards compat with checks below
+_SYSTEM_LEAK_PHRASES = _HARD_FAIL_PHRASES + _SOFT_STRIP_PHRASES
 
 _PRESENCE_FALLBACKS = [
     "I'm here. What's going on?",
@@ -123,12 +160,29 @@ def _reflection_prefix(emotion: str, intensity: str) -> str:
     return ""
 
 def _sanitize_response(response: str, user_input: str, session_key: str = "default") -> str:
-    """Strip system language and prevent identical back-to-back responses."""
-    import random
+    """Strip AI-isms and prevent identical back-to-back responses."""
     lower = response.lower()
-    if any(phrase in lower for phrase in _SYSTEM_LEAK_PHRASES):
-        logger.warning("Presence filter caught system language in response — replacing.")
+
+    # Hard fail: identity/mode leak → replace entire response
+    if any(phrase in lower for phrase in _HARD_FAIL_PHRASES):
+        logger.warning("Presence filter: identity leak detected — replacing response.")
         response = random.choice(_PRESENCE_FALLBACKS)
+    else:
+        # Soft strip: AI-ism phrases → remove the sentence containing them
+        sentences = re.split(r'(?<=[.!?…])\s+', response)
+        cleaned = []
+        stripped_any = False
+        for s in sentences:
+            sl = s.lower()
+            if any(phrase in sl for phrase in _SOFT_STRIP_PHRASES):
+                stripped_any = True
+                logger.debug(f"Soft-stripped AI-ism sentence: {s[:60]}")
+                continue
+            cleaned.append(s)
+        if stripped_any and cleaned:
+            response = " ".join(cleaned)
+        elif stripped_any and not cleaned:
+            response = random.choice(_PRESENCE_FALLBACKS)
 
     last = _last_response_cache.get(session_key, "")
     if response.strip() == last.strip():
@@ -226,29 +280,36 @@ def _get_quick_response(message: str, last_intent: str, session_key: str = "defa
 # ─── Personality-driven thinking messages ────────────────────────────────
 THINKING_PHASES = {
     "default": [
-        "Hmm… let me think about that…",
-        "I'm listening…",
-        "Give me a moment…",
+        "Hmm…",
+        "Okay…",
+        "Yeah…",
+        "Wait…",
     ],
     "mitra": [
-        "Hmm… let me sit with that for a second…",
-        "I hear you… let me think…",
-        "Taking that in…",
+        "Hmm…",
+        "Oh…",
+        "Okay, okay…",
+        "Yeah…",
+        "Wait—",
+        "…",
     ],
     "mentor": [
-        "Let me reflect on that…",
-        "That's a thoughtful question…",
-        "In my experience…",
+        "Hmm.",
+        "Interesting…",
+        "Okay…",
+        "Let me think…",
     ],
     "motivator": [
-        "Love that energy! Let me think…",
-        "Great question! Hold on…",
-        "Let's figure this out together!",
+        "Okay—",
+        "Alright…",
+        "Yeah!",
+        "Hmm, okay.",
     ],
     "coach": [
-        "Analyzing your situation…",
-        "Let me structure my thoughts…",
-        "Processing your input…",
+        "Okay.",
+        "Right.",
+        "Hmm.",
+        "Got it—",
     ],
 }
 

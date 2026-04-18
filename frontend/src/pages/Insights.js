@@ -40,20 +40,32 @@ function Insights() {
     const load = async () => {
       setLoading(true);
       try {
-        const [, journals] = await Promise.all([
-          api.getInsights().catch(() => null),
-          api.getJournals().catch(() => []),
-        ]);
-        const jList = Array.isArray(journals) ? journals : [];
-        setRecentJournals(jList);
+        // Read from localStorage first (where Journal.jsx saves), then supplement with backend
+        const local = (() => {
+          try { return JSON.parse(localStorage.getItem('journalEntries') || '[]'); } catch { return []; }
+        })();
+        // Normalise: local entries use `timestamp`, backend entries use `created_at`
+        const normalize = (j) => ({ ...j, created_at: j.created_at || j.timestamp || j.date });
+        const localNorm = local.map(normalize);
+
+        // Also try backend (for entries saved from other sessions)
+        const backend = await api.getJournals().catch(() => []);
+        const backendNorm = (Array.isArray(backend) ? backend : []).map(normalize);
+
+        // Merge by content (deduplicate) — prefer local for date accuracy
+        const seen = new Set(localNorm.map(j => j.content?.slice(0, 40)));
+        const merged = [...localNorm, ...backendNorm.filter(j => !seen.has(j.content?.slice(0, 40)))];
+
+        setRecentJournals(merged);
         const now = new Date();
         const start = new Date(); start.setDate(now.getDate() - 6);
-        const inRange = jList.filter(j => {
+        const inRange = merged.filter(j => {
           const d = j.created_at ? new Date(j.created_at) : null;
-          return d && d >= start && d <= now;
+          return d && !isNaN(d) && d >= start && d <= now;
         });
         const uniqueDays = new Set(inRange.map(j => new Date(j.created_at).toISOString().split('T')[0]));
         setStats({ entries_this_week: inRange.length, active_days: uniqueDays.size });
+        api.getInsights().catch(() => null);
       } finally {
         setLoading(false);
       }
@@ -69,8 +81,9 @@ function Insights() {
       return { date: d.toISOString().split('T')[0], day: d.toLocaleDateString(undefined, { weekday: 'short' }), entries: 0 };
     });
     recentJournals.forEach(j => {
-      if (!j.created_at) return;
-      const dateStr = new Date(j.created_at).toISOString().split('T')[0];
+      const ts = j.created_at || j.timestamp || j.date;
+      if (!ts) return;
+      const dateStr = new Date(ts).toISOString().split('T')[0];
       const slot = days.find(x => x.date === dateStr);
       if (slot) slot.entries += 1;
     });
@@ -213,7 +226,7 @@ function Insights() {
                         {j.content ? j.content.slice(0, 40) + '…' : 'Entry'}
                       </p>
                       <p className="text-[9px] flex-shrink-0" style={{ color: 'var(--mm-text-muted)' }}>
-                        {j.created_at ? new Date(j.created_at).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''}
+                        {(() => { const ts = j.created_at || j.timestamp || j.date; return ts ? new Date(ts).toLocaleDateString([], { month: 'short', day: 'numeric' }) : ''; })()}
                       </p>
                     </div>
                   ))}

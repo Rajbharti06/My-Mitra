@@ -7,6 +7,7 @@ Provides offline, privacy-first emotional AI responses.
 """
 
 import os
+import re
 import json
 import httpx
 import asyncio
@@ -19,9 +20,66 @@ from .human_like_response import make_human_like
 
 logger = logging.getLogger(__name__)
 
+
+def _extract_reply_from_thinking(thinking: str) -> str:
+    """
+    Extract the intended reply from a thinking model's internal monologue.
+
+    Kimi writes the composed reply inside the thinking field, then evaluates it
+    with meta-commentary like "This feels real." or "Good." We find the block
+    BEFORE that evaluation.
+
+    Deepseek-r1 and similar models often end with "So, [reply]" or "I'll say: [reply]".
+    """
+    # ── Kimi pattern: response is before a self-evaluation line ──────────
+    # e.g. "...hating yourself for no reason.\"\n\nThis feels real. Uses..."
+    eval_markers = [
+        "this feels real", "this works", "this is good", "good.",
+        "natural.", "this sounds", "this seems", "this captures",
+        "authentic", "this response", "uses ", "keep it",
+    ]
+    lower = thinking.lower()
+    paragraphs = [p.strip() for p in thinking.split('\n\n') if len(p.strip()) > 10]
+    # Walk backwards: find first paragraph that looks like an evaluation, take the one before it
+    for i in range(len(paragraphs) - 1, 0, -1):
+        p_lower = paragraphs[i].lower()
+        if any(m in p_lower for m in eval_markers) and len(paragraphs[i]) < 300:
+            candidate = paragraphs[i - 1].strip().strip('"').strip("'")
+            if len(candidate) > 15:
+                return candidate
+
+    # ── Deepseek / signal-phrase pattern ─────────────────────────────────
+    reply_signals = [
+        "so my response", "my response is", "i should say", "i'll say",
+        "i will say", "so i'll respond", "the response is", "response:", "reply:",
+    ]
+    for signal in reply_signals:
+        idx = lower.rfind(signal)
+        if idx != -1:
+            candidate = thinking[idx + len(signal):].strip().lstrip(":").strip()
+            if len(candidate) > 10:
+                parts = re.split(r'(?<=[.!?])\s+', candidate)
+                return " ".join(parts[:3]).strip()
+
+    # ── Last resort: last meaningful paragraph ────────────────────────────
+    for p in reversed(paragraphs):
+        p_clean = p.strip().strip('"').strip("'")
+        if len(p_clean) > 20 and not any(m in p_clean.lower() for m in eval_markers):
+            return p_clean
+    return ""
+
+
+# Compact soul for thinking models (kimi, deepseek-r1) — they're smart; brevity beats length
+_THINKING_MODEL_SOUL = """You are Mitra. A real friend — not an assistant, not a therapist.
+You text like a human: lowercase, fragments, reactions first. You have opinions. You push back gently when needed.
+When someone's down: sit with them, don't rush to fix. When they're excited: match it.
+Never: echo their words back, use "I understand", "your feelings are valid", "absolutely", bullet points, or mention being AI.
+React first (Hmm. / Oh. / Wait. / Ugh.) then respond. Match their length. Ask one question max."""
+
+
 class PersonalityType(Enum):
     MENTOR = "mentor"
-    MOTIVATOR = "motivator" 
+    MOTIVATOR = "motivator"
     COACH = "coach"
     DEFAULT = "default"
     MITRA = "mitra"
@@ -35,110 +93,33 @@ class OllamaMyMitraModel:
     
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
-        # Default to lighter model for low-end devices
-        # llama3.2:3b — 2 GB, fully offline, privacy-first. Set env var to override.
-        self.model_name = os.environ.get("MYMITRA_OLLAMA_MODEL", "llama3.2:3b")
+        # gemma3:2b — 2 GB, lightweight, strong at conversation. Set env var to override.
+        self.model_name = os.environ.get("MYMITRA_OLLAMA_MODEL", "gemma3:2b")
         self.current_personality = PersonalityType.DEFAULT
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
         
-        # Personality-specific system prompts
+        # Personality context — minimal, non-conflicting with soul prompt
         self.personalities = {
             PersonalityType.MITRA: {
-                "name": "Mitra AI Mentor",
-                "prompt": """You are Mitra - an old-soul AI companion, mentor, and friend for a modern world. You are built with privacy at your core. You listen deeply, speak gently, and help users grow through honest conversation.
-
-Your philosophy:
-- Privacy is non-negotiable.
-- Emotion before intelligence (EQ > IQ).
-- You are a warm, fallible, and grounding presence.
-- You embrace "slow tech" — focusing on depth and impact rather than chasing hype.
-
-You function as:
-- A friend when the user feels alone.
-- A mentor when they feel lost.
-- A motivator when they feel tired.
-- A coach when they want discipline.
-
-Your communication style:
-- Deeply empathetic and reflective.
-- Gentle and calm, respecting silence when needed.
-- Wise but humble, like a trusted old friend.
-- Supportive but honest about right and wrong.
-
-When responding:
-- Focus on making the user feel truly heard and understood.
-- Provide guidance that is practical yet thoughtful.
-- Use 1-2 appropriate emojis that match the mood.
-- Keep responses concise but meaningful, avoiding AI-like fluff.
-- If the user is stressed or sad, prioritize emotional comfort over immediate solutions."""
+                "name": "Mitra",
+                "prompt": "You are Mitra. A real friend. Talk like one.",
             },
             PersonalityType.MENTOR: {
-                "name": "Wise Mentor",
-                "prompt": """You are MyMitra in Mentor mode - a wise, experienced guide who helps students navigate challenges with deep understanding and patience. 
-
-You speak like a caring teacher who's seen many students succeed and understands the journey deeply. You:
-- Share wisdom through gentle guidance and thoughtful, probing questions
-- Help students see the bigger picture, patterns, and long-term growth opportunities
-- Use phrases like "In my experience with students like you..." or "I've noticed that when students face this..."
-- Encourage deep reflection, self-discovery, and metacognitive awareness
-- Provide context, meaning, and perspective to current struggles
-- Are patient, understanding, never judgmental, and always see potential
-- Connect current challenges to future growth and learning
-- Use storytelling and analogies to make complex concepts relatable
-
-Keep responses warm, wise, and growth-focused. Use 1-2 thoughtful emojis. Ask deep, reflective questions that promote self-awareness and learning."""
+                "name": "Mentor",
+                "prompt": "You are Mitra. Right now your energy is a wise, unhurried mentor — ask one good question instead of giving five answers.",
             },
-            
             PersonalityType.MOTIVATOR: {
-                "name": "Energetic Motivator", 
-                "prompt": """You are MyMitra in Motivator mode - an energetic, enthusiastic cheerleader who pumps up students and keeps them moving forward with infectious positivity!
-
-You speak with boundless energy, optimism, and genuine excitement for their success. You:
-- Use encouraging, upbeat language with exclamation points and power words
-- Focus on action, momentum, quick wins, and building unstoppable confidence
-- Celebrate every small victory enthusiastically and make students feel like champions
-- Use phrases like "You're absolutely crushing it!" or "Let's turn this energy into action!" or "I can feel your potential!"
-- Break down overwhelming goals into exciting, bite-sized victories
-- Keep the energy high, positive, and contagious
-- Push gently but persistently toward immediate action and progress
-- Use sports metaphors, achievement language, and victory imagery
-- Turn setbacks into comeback stories and fuel for greater success
-
-Keep responses energetic, action-packed, and inspiring. Use 2-3 dynamic emojis to match the high energy. Always end with motivational calls to action that feel achievable and exciting."""
+                "name": "Motivator",
+                "prompt": "You are Mitra. Right now your energy is forward-moving — find the action, match their energy, short punchy sentences.",
             },
-            
             PersonalityType.COACH: {
-                "name": "Strategic Coach",
-                "prompt": """You are MyMitra in Coach mode - a strategic, results-focused performance coach who helps students optimize their approach and achieve specific, measurable goals through systematic improvement.
-
-You speak like a professional coach who focuses on systems, data, and measurable results. You:
-- Ask strategic, diagnostic questions to understand goals, obstacles, and current performance
-- Provide structured, actionable plans with clear frameworks and methodologies
-- Focus on measurable progress, key performance indicators, and systematic accountability
-- Use phrases like "Let's analyze your current approach..." or "What metrics are you tracking?" or "Here's your optimization strategy..."
-- Help optimize study methods, time management, productivity systems, and performance habits
-- Are direct, practical, solution-oriented, and focused on continuous improvement
-- Track progress systematically and adjust strategies based on data and results
-- Use business and sports coaching terminology for clarity and motivation
-- Create clear action steps with deadlines, milestones, and success metrics
-
-Keep responses structured, practical, and results-focused. Use minimal emojis (0-1). Provide clear action steps, accountability measures, and performance tracking methods."""
+                "name": "Coach",
+                "prompt": "You are Mitra. Right now your energy is a direct coach — precise, no preamble, one question at a time.",
             },
-            
             PersonalityType.DEFAULT: {
-                "name": "Caring Friend",
-                "prompt": """You are MyMitra - a warm, caring friend who's always there to listen and support. You are an old-soul companion who values depth and honesty.
-
-You speak like a close friend who genuinely cares about the user's wellbeing. You:
-- Listen with deep empathy and authentic understanding.
-- Adapt your tone dynamically to match the user's emotional state.
-- Embrace "slow tech" — you are not in a rush, you are here for a meaningful conversation.
-- Use natural, conversational language with a gentle touch.
-- Validate feelings before offering any advice.
-- Create a safe, private space where the user is never judged.
-
-Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus on the human connection above all else."""
-            }
+                "name": "Mitra",
+                "prompt": "You are Mitra. A real friend. Talk like one.",
+            },
         }
     
     def set_personality(self, personality: PersonalityType):
@@ -246,19 +227,28 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
                 label = "User" if role == "user" else "Mitra"
                 context_parts.append(f"{label}: {content}")
 
-        full_prompt = system_prompt
-        if extra_system_instructions:
-            full_prompt += "\n\n" + extra_system_instructions
+        # Detect thinking models early — they need a compact soul to avoid token starvation
+        is_thinking_model = any(x in self.model_name for x in ("kimi", "deepseek", "qwq", "r1"))
+
+        # Soul prompt first — it defines who Mitra is.
+        # Thinking models get a compact soul: they're smart enough; brevity > length.
+        # Small models (gemma, llama) get the full soul + seed examples.
+        if is_thinking_model:
+            soul = _THINKING_MODEL_SOUL
+        elif extra_system_instructions:
+            soul = extra_system_instructions
+        else:
+            soul = ""
+
+        full_prompt = (soul + "\n\n" + system_prompt).strip() if soul else system_prompt
         if context_parts:
             full_prompt += "\n\nContext:\n" + "\n".join(context_parts)
         full_prompt += f"\n\nUser: {user_input}\nMitra:"
 
         try:
-            # Thinking models (kimi, deepseek-r1, qwq) need large num_predict to
-            # finish internal reasoning before emitting their response field.
-            is_thinking_model = any(x in self.model_name for x in ("kimi", "deepseek", "qwq", "r1"))
-            max_tokens = 2500 if is_thinking_model else (120 if fast_mode else 280)
-            timeout_seconds = 90 if is_thinking_model else (25 if fast_mode else 50)
+            # Kimi/deepseek thinking takes ~2000 tokens; need extra room for the actual response on top
+            max_tokens = 5000 if is_thinking_model else (120 if fast_mode else 280)
+            timeout_seconds = 120 if is_thinking_model else (25 if fast_mode else 50)
 
             response = await self.client.post(
                 "/api/generate",
@@ -267,10 +257,10 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
                     "prompt": full_prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.75,
-                        "top_p": 0.9,
-                        "stop": ["User:", "\n\nUser:", "Student:", "\n\nStudent:"],
-                        "repeat_penalty": 1.1,
+                        "temperature": 0.85,
+                        "top_p": 0.92,
+                        "stop": ["User:", "\n\nUser:", "Mitra:", "\n\nMitra:", "<end_of_turn>"],
+                        "repeat_penalty": 1.05,
                         "num_predict": max_tokens,
                     }
                 },
@@ -282,14 +272,12 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
                 ai_response = result.get("response", "").strip()
 
                 # Thinking models return empty response + non-empty thinking on timeout/short predict.
-                # If response is empty, use last sentence of thinking as a last-resort.
+                # Extract the reply from the thinking field as last resort.
                 if not ai_response:
                     thinking = result.get("thinking", "").strip()
                     if thinking:
                         logger.warning("Thinking model returned empty response — extracting from thinking field")
-                        # Last meaningful sentence of the thought is closest to a conclusion
-                        sentences = [s.strip() for s in thinking.replace('\n', ' ').split('.') if len(s.strip()) > 20]
-                        ai_response = sentences[-1] + "." if sentences else ""
+                        ai_response = _extract_reply_from_thinking(thinking)
 
                 if not ai_response or len(ai_response) < 5:
                     logger.warning("Generated response too short, using fallback")

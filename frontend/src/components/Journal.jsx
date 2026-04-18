@@ -6,6 +6,7 @@ import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Save, Trash2, Edit2 } from 'lucide-react';
 import { toast } from 'react-toastify';
+import * as api from '../services/api';
 
 // Emotion config — inline styles, NOT dynamic Tailwind class names
 const EMOTIONS = [
@@ -263,6 +264,8 @@ export default function Journal() {
         wordCount: content.split(/\s+/).length,
       };
       persist([entry, ...entries]);
+      // Silently sync to backend — doesn't block UI
+      api.createJournalEntry(content, emotion).catch(() => {});
       toast.success('Entry saved');
       setWriting(false);
     }
