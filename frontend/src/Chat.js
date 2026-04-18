@@ -14,9 +14,11 @@ const THINKING_MESSAGES = {
 };
 
 const QUICK_PROMPTS = [
-  { text: "I'm feeling stressed", emoji: "😟" },
+  { text: "I'm feeling overwhelmed", emoji: "😮‍💨" },
+  { text: "I need to talk", emoji: "💬" },
   { text: "Help me focus", emoji: "🎯" },
-  { text: "Motivate me", emoji: "💪" },
+  { text: "I feel lost today", emoji: "🌫️" },
+  { text: "Give me some motivation", emoji: "💪" },
 ];
 
 // Emotion -> subtle glow color (for breathing aura)
@@ -383,20 +385,35 @@ function Chat({ onEmotionChange }) {
               className="p-1.5 rounded-lg hover:bg-white/5" style={{ color: 'var(--mm-text-muted)' }}>
               <PlusCircle size={16} />
             </motion.button>
+
+            {/* Mitra avatar orb */}
+            <div className="mitra-header-avatar">
+              <Sparkles size={14} style={{ color: 'rgba(139,92,246,0.8)', filter: 'drop-shadow(0 0 4px rgba(139,92,246,0.5))' }} />
+              <span className="presence-dot" />
+            </div>
+
             <div>
-              <h1 className="text-sm font-medium flex items-center gap-1.5" style={{ color: 'var(--mm-text-primary)' }}>
-                <Sparkles size={13} className="text-blue-400" style={{ filter: 'drop-shadow(0 0 4px rgba(59,130,246,0.4))' }} />
-                {currentPersonality.charAt(0).toUpperCase() + currentPersonality.slice(1)}
+              <h1 className="text-sm font-medium" style={{ color: 'var(--mm-text-primary)', letterSpacing: '-0.01em' }}>
+                Mitra
+                <span className="ml-1.5 text-[10px] font-normal opacity-50">
+                  {currentPersonality !== 'mitra' ? `· ${currentPersonality}` : ''}
+                </span>
               </h1>
-              <AnimatePresence>
-                {(isStreaming || remoteTyping) && (
-                  <motion.p initial={{ opacity: 0, y: -4 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} className="text-[10px] italic flex items-center gap-1"
+              <AnimatePresence mode="wait">
+                {isStreaming || remoteTyping ? (
+                  <motion.p key="streaming" initial={{ opacity: 0, y: -3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="text-[10px] italic flex items-center gap-1"
                     style={{ color: streamPhase === 'silence' ? '#a78bfa' : 'var(--mm-accent)' }}>
-                    {streamPhase === 'silence' && <Moon size={10} />}
-                    {streamPhase === 'streaming' && <Zap size={10} />}
+                    {streamPhase === 'silence' && <Moon size={9} />}
+                    {streamPhase === 'streaming' && <Zap size={9} />}
                     {streamPhase === 'silence' ? silenceMessage || 'Listening…' :
                      streamPhase === 'streaming' ? 'Speaking…' :
                      thinkingMessage || 'Thinking…'}
+                  </motion.p>
+                ) : (
+                  <motion.p key="status" initial={{ opacity: 0 }} animate={{ opacity: 1 }}
+                    className="text-[10px]" style={{ color: 'var(--mm-text-muted)' }}>
+                    here with you
                   </motion.p>
                 )}
               </AnimatePresence>
@@ -526,53 +543,65 @@ function Chat({ onEmotionChange }) {
             )}
           </AnimatePresence>
 
-          {/* Empty State — personalized presence */}
+          {/* Empty State — cinematic presence */}
           {emptyState && !initiativeMessage && !deepPresenceMode && (
             <div className="h-full flex flex-col items-center justify-center text-center">
-              <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.8 }} className="space-y-6 max-w-sm w-full px-4">
-                {/* Breathing orb */}
-                <motion.div
-                  animate={{ scale: [1, 1.06, 1], opacity: [0.7, 1, 0.7] }}
-                  transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
-                  className="w-16 h-16 mx-auto rounded-full flex items-center justify-center relative"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(139, 92, 246, 0.2))',
-                    border: '1px solid rgba(59, 130, 246, 0.2)',
-                    boxShadow: `0 0 30px ${emotionGlow}, 0 0 60px rgba(59, 130, 246, 0.08)`,
-                  }}>
-                  <Sparkles size={24} className="text-blue-400" />
-                </motion.div>
+              <motion.div
+                initial={{ opacity: 0, scale: 0.92 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 1, ease: [0.4, 0, 0.2, 1] }}
+                className="space-y-8 max-w-sm w-full px-4"
+              >
+                {/* Layered breathing orb */}
+                <div className="welcome-orb-outer mx-auto">
+                  <div className="welcome-orb-inner">
+                    <Sparkles size={28} style={{ color: 'rgba(139,92,246,0.75)', filter: 'drop-shadow(0 0 8px rgba(139,92,246,0.5))' }} />
+                  </div>
+                </div>
 
                 {/* Personalized greeting */}
-                <div>
-                  <motion.p
-                    initial={{ opacity: 0, y: 6 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}
-                    className="text-lg font-light mb-2"
-                    style={{ color: 'var(--mm-text-primary)' }}
-                  >
+                <motion.div
+                  initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.4, duration: 0.7 }}
+                >
+                  <p className="welcome-greeting mb-3">
                     {userName
-                      ? `Hey ${userName}… I'm here.`
-                      : "Hey… I'm here whenever you need me."}
-                  </motion.p>
+                      ? `Hey ${userName}…`
+                      : "Hey…"}
+                  </p>
+                  <p className="text-sm font-light mb-1" style={{ color: 'var(--mm-text-secondary)' }}>
+                    {userName ? "I'm here whenever you need me." : "I'm right here, whenever you're ready."}
+                  </p>
                   <motion.p
-                    initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ delay: 0.6 }}
-                    className="presence-text text-sm"
+                    animate={{ opacity: [0.4, 0.7, 0.4] }}
+                    transition={{ duration: 4, repeat: Infinity, ease: "easeInOut" }}
+                    className="text-xs mt-2"
+                    style={{ color: 'var(--mm-text-muted)', letterSpacing: '0.02em' }}
                   >
                     {currentEmotion.emotion !== 'neutral'
-                      ? `You seem ${currentEmotion.emotion} today. I'm listening.`
-                      : "Share anything. It stays between us."}
+                      ? `You seem ${currentEmotion.emotion}. I'm listening.`
+                      : "Everything you share stays between us."}
                   </motion.p>
-                </div>
+                </motion.div>
 
                 {/* Quick prompts */}
                 <motion.div
                   className="flex flex-wrap justify-center gap-2"
-                  initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.7 }}
+                  initial={{ opacity: 0, y: 10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: 0.75, duration: 0.6 }}
                 >
                   {QUICK_PROMPTS.map((prompt, i) => (
-                    <motion.button key={i} className="prompt-chip" whileHover={{ scale: 1.04 }} whileTap={{ scale: 0.97 }}
+                    <motion.button
+                      key={i}
+                      className="prompt-chip"
+                      whileHover={{ scale: 1.04, y: -1 }}
+                      whileTap={{ scale: 0.97 }}
                       onClick={() => handleSend(prompt.text)}
-                      initial={{ opacity: 0, y: 5 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.8 + i * 0.08 }}>
+                      initial={{ opacity: 0, y: 4 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      transition={{ delay: 0.85 + i * 0.07 }}
+                    >
                       <span>{prompt.emoji}</span><span>{prompt.text}</span>
                     </motion.button>
                   ))}
@@ -584,13 +613,24 @@ function Chat({ onEmotionChange }) {
           {/* Messages */}
           <AnimatePresence>
             {messages.map((msg, idx) => (
-              <motion.div key={idx} initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.3 }}
-                className={`mb-4 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[65%] px-4 py-3 relative ${
+              <motion.div
+                key={idx}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0 }}
+                transition={{ duration: 0.35, ease: [0.4, 0, 0.2, 1] }}
+                className={`mb-5 flex ${msg.sender === 'user' ? 'justify-end' : 'justify-start'}`}
+              >
+                {msg.sender !== 'user' && !msg.isSystemMessage && (
+                  <div className="mitra-presence-dot mr-2.5 mt-1">
+                    <Sparkles size={11} style={{ color: 'rgba(139,92,246,0.7)' }} />
+                  </div>
+                )}
+                <div className={`max-w-[62%] px-4 py-3.5 relative ${
                   msg.isSystemMessage ? 'bubble-system' : msg.sender === 'user' ? 'bubble-user' : 'bubble-mitra'
                 } ${msg._streaming ? 'streaming-cursor' : ''} ${hasMeaningMoment && idx === messages.length - 1 && msg.sender === 'ai' ? 'meaning-glow' : ''}`}>
-                  <p className="text-[13px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--mm-text-primary)' }}>{msg.text}</p>
-                  <p className="text-[9px] mt-1.5 opacity-40">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
+                  <p className="text-[13.5px] leading-relaxed whitespace-pre-wrap" style={{ color: 'var(--mm-text-primary)', letterSpacing: '-0.005em' }}>{msg.text}</p>
+                  <p className="text-[9px] mt-2 opacity-30">{new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</p>
                 </div>
               </motion.div>
             ))}
@@ -599,9 +639,12 @@ function Chat({ onEmotionChange }) {
           {/* Silence indicator (replaces typing dots for heavy emotions) */}
           <AnimatePresence>
             {isStreaming && streamPhase === 'silence' && silenceMessage && (
-              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-4 flex justify-start">
-                <div className="bubble-mitra">
-                  <p className="text-[12px] italic" style={{ color: 'var(--mm-accent)' }}>{silenceMessage}</p>
+              <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="mb-4 flex justify-start items-start gap-2.5">
+                <div className="mitra-presence-dot mt-1">
+                  <Sparkles size={11} style={{ color: 'rgba(139,92,246,0.7)' }} />
+                </div>
+                <div className="bubble-mitra px-4 py-3">
+                  <p className="text-[12px] italic" style={{ color: '#a78bfa' }}>{silenceMessage}</p>
                 </div>
               </motion.div>
             )}
@@ -610,7 +653,10 @@ function Chat({ onEmotionChange }) {
           {/* Typing dots (only during thinking phase) */}
           <AnimatePresence>
             {isStreaming && streamPhase === 'thinking' && (
-              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="mb-4 flex justify-start">
+              <motion.div initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -4 }} className="mb-4 flex justify-start items-start gap-2.5">
+                <div className="mitra-presence-dot mt-1">
+                  <Sparkles size={11} style={{ color: 'rgba(139,92,246,0.7)' }} />
+                </div>
                 <div className="bubble-mitra">
                   <div className="typing-indicator"><div className="typing-dot" /><div className="typing-dot" /><div className="typing-dot" /></div>
                 </div>
@@ -707,22 +753,30 @@ function Chat({ onEmotionChange }) {
         )}
 
         {/* Input Area */}
-        <div className="px-5 py-4 border-t border-white/5" style={{ background: 'rgba(10, 14, 26, 0.5)', backdropFilter: 'blur(20px)' }}>
+        <div className="px-5 py-4 border-t border-white/5" style={{ background: 'rgba(10, 14, 26, 0.55)', backdropFilter: 'blur(24px)' }}>
           <div className="flex items-center gap-3">
-            <input ref={inputRef} value={input} onChange={e => setInput(e.target.value)} onKeyDown={handleKeyDown}
-              placeholder={isStreaming ? "Mitra is responding…" : "What's on your mind…"}
-              className="input-glass flex-1" disabled={isStreaming} autoFocus />
-            <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => handleSend()} disabled={!input.trim() || isStreaming}
-              className="p-3 rounded-xl transition-all"
-              style={{
-                background: input.trim() && !isStreaming ? 'linear-gradient(135deg, var(--mm-accent), var(--mm-accent-purple))' : 'rgba(71, 85, 105, 0.3)',
-                color: 'white', opacity: input.trim() && !isStreaming ? 1 : 0.5,
-                boxShadow: input.trim() && !isStreaming ? '0 4px 16px rgba(59, 130, 246, 0.3)' : 'none',
-              }}>
-              <Send size={16} />
+            <input
+              ref={inputRef}
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={handleKeyDown}
+              placeholder={isStreaming ? "Mitra is with you…" : "Say anything…"}
+              className="input-glass"
+              disabled={isStreaming}
+              autoFocus
+            />
+            <motion.button
+              whileHover={{ scale: 1.08 }}
+              whileTap={{ scale: 0.94 }}
+              onClick={() => handleSend()}
+              disabled={!input.trim() || isStreaming}
+              className="send-btn"
+              style={{ opacity: input.trim() && !isStreaming ? 1 : 0.35 }}
+            >
+              <Send size={15} color="white" />
             </motion.button>
           </div>
-          <div className="relative mt-3">
+          <div className="relative mt-2.5">
             <div className={`heartbeat-line ${isStreaming ? 'streaming-active' : ''}`} />
           </div>
         </div>

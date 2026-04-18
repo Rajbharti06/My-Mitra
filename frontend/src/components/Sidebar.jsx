@@ -13,7 +13,7 @@ import {
 } from 'lucide-react';
 
 const Sidebar = ({ activeTab, setActiveTab, isCollapsed: externalCollapsed }) => {
-  const [isCollapsed, setIsCollapsed] = useState(externalCollapsed || false);
+  const [isCollapsed, setIsCollapsed] = useState(externalCollapsed !== undefined ? externalCollapsed : true);
 
   const menuItems = [
     { id: 'chat', label: 'Chat', icon: MessageCircle, emoji: '💬' },
