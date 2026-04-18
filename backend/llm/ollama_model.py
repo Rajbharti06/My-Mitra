@@ -36,7 +36,8 @@ class OllamaMyMitraModel:
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
         # Default to lighter model for low-end devices
-        self.model_name = os.environ.get("MYMITRA_OLLAMA_MODEL", "kimi-k2.5:cloud")
+        # llama3.2:3b — 2 GB, fully offline, privacy-first. Set env var to override.
+        self.model_name = os.environ.get("MYMITRA_OLLAMA_MODEL", "llama3.2:3b")
         self.current_personality = PersonalityType.DEFAULT
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
         
@@ -253,12 +254,11 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
         full_prompt += f"\n\nUser: {user_input}\nMitra:"
 
         try:
-            # kimi-k2.5:cloud is a thinking model: it needs large num_predict to
-            # finish its internal reasoning (<think>…</think>) BEFORE emitting the
-            # final response. With too few tokens the response field is always empty.
+            # Thinking models (kimi, deepseek-r1, qwq) need large num_predict to
+            # finish internal reasoning before emitting their response field.
             is_thinking_model = any(x in self.model_name for x in ("kimi", "deepseek", "qwq", "r1"))
-            max_tokens = 2500 if is_thinking_model else (150 if fast_mode else 256)
-            timeout_seconds = 90 if is_thinking_model else (20 if fast_mode else 45)
+            max_tokens = 2500 if is_thinking_model else (120 if fast_mode else 280)
+            timeout_seconds = 90 if is_thinking_model else (25 if fast_mode else 50)
 
             response = await self.client.post(
                 "/api/generate",

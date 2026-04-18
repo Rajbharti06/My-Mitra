@@ -129,6 +129,10 @@ app.include_router(stream_router, prefix="/api/v1")
 from .growth_routes import router as growth_router
 app.include_router(growth_router, prefix="/api/v1")
 
+# Include voice transcription routes (offline Whisper STT — fully private)
+from .voice_routes import router as voice_router
+app.include_router(voice_router, prefix="/api/v1")
+
 # Root endpoint
 @app.get("/")
 def root():

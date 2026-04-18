@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Send, Settings, Trash2, PlusCircle, Wifi, WifiOff, Sparkles, Lock, Zap, Brain, X, Moon, Target, Eye, Heart } from 'lucide-react';
+import { Send, Settings, Trash2, PlusCircle, Wifi, WifiOff, Sparkles, Lock, Zap, Brain, X, Moon, Target, Eye, Heart, Volume2, VolumeX } from 'lucide-react';
 import { toast } from 'react-toastify';
 import * as api from './services/api';
+import VoiceInput from './components/VoiceInput';
 
 // ─── Thinking messages (per-personality) ────────────────────────────────
 const THINKING_MESSAGES = {
@@ -20,6 +21,39 @@ const QUICK_PROMPTS = [
   { text: "I feel lost today", emoji: "🌫️" },
   { text: "Give me some motivation", emoji: "💪" },
 ];
+
+// ─── TTS: Emotion-tuned voice via Web SpeechSynthesis (fully local, private) ──
+const EMOTION_VOICE = {
+  sad:       { rate: 0.88, pitch: 0.92, volume: 0.85 },
+  stressed:  { rate: 0.92, pitch: 1.02, volume: 0.88 },
+  anxious:   { rate: 0.90, pitch: 1.00, volume: 0.85 },
+  angry:     { rate: 0.95, pitch: 0.96, volume: 0.90 },
+  happy:     { rate: 1.05, pitch: 1.08, volume: 0.95 },
+  motivated: { rate: 1.08, pitch: 1.10, volume: 0.95 },
+  neutral:   { rate: 0.95, pitch: 1.00, volume: 0.88 },
+};
+
+function speakText(text, emotion = 'neutral', onStart, onEnd) {
+  if (!window.speechSynthesis) return;
+  window.speechSynthesis.cancel();
+  const utterance = new SpeechSynthesisUtterance(text.replace(/[*_~`#]/g, ''));
+  const params = EMOTION_VOICE[emotion] || EMOTION_VOICE.neutral;
+  utterance.rate = params.rate;
+  utterance.pitch = params.pitch;
+  utterance.volume = params.volume;
+
+  // Pick a warm female voice if available
+  const voices = window.speechSynthesis.getVoices();
+  const preferred = voices.find(v =>
+    /female|zira|samantha|victoria|fiona|moira/i.test(v.name)
+  ) || voices.find(v => v.lang === 'en-US') || voices[0];
+  if (preferred) utterance.voice = preferred;
+
+  utterance.onstart = onStart;
+  utterance.onend = onEnd;
+  utterance.onerror = onEnd;
+  window.speechSynthesis.speak(utterance);
+}
 
 // Emotion -> subtle glow color (for breathing aura)
 const EMOTION_GLOW = {
@@ -49,6 +83,9 @@ function Chat({ onEmotionChange }) {
   const [availablePersonalities, setAvailablePersonalities] = useState([]);
   const [preferencesOpen, setPreferencesOpen] = useState(false);
   const [currentEmotion, setCurrentEmotion] = useState({ emotion: 'neutral', intensity: 'medium' });
+  const [ttsEnabled, setTtsEnabled] = useState(() => localStorage.getItem('ttsEnabled') !== 'false');
+  const [isSpeaking, setIsSpeaking] = useState(false);
+
   const [sessionId, setSessionId] = useState(() => {
     const existing = localStorage.getItem('sessionId');
     if (existing) return existing;
@@ -247,17 +284,28 @@ function Chat({ onEmotionChange }) {
               if (data.insight) setEmotionPattern(data);
               break;
 
-            case 'done':
+            case 'done': {
               setStreamPhase('done');
+              const finalText = data.full_response;
               setMessages(prev => {
                 const updated = [...prev];
                 const lastIdx = updated.length - 1;
                 if (lastIdx >= 0 && updated[lastIdx]._streaming) {
-                  updated[lastIdx] = { ...updated[lastIdx], text: data.full_response || updated[lastIdx].text, _streaming: false };
+                  updated[lastIdx] = { ...updated[lastIdx], text: finalText || updated[lastIdx].text, _streaming: false };
                 }
                 return updated;
               });
+              // Speak the response if TTS is on
+              if (ttsEnabled && finalText) {
+                speakText(
+                  finalText,
+                  currentEmotion.emotion,
+                  () => setIsSpeaking(true),
+                  () => setIsSpeaking(false),
+                );
+              }
               break;
+            }
 
             default: break;
           }
@@ -387,8 +435,8 @@ function Chat({ onEmotionChange }) {
             </motion.button>
 
             {/* Mitra avatar orb */}
-            <div className="mitra-header-avatar">
-              <Sparkles size={14} style={{ color: 'rgba(139,92,246,0.8)', filter: 'drop-shadow(0 0 4px rgba(139,92,246,0.5))' }} />
+            <div className={`mitra-header-avatar ${isSpeaking ? 'speaking-pulse' : ''}`}>
+              <Sparkles size={14} style={{ color: isSpeaking ? 'rgba(134,239,172,0.9)' : 'rgba(139,92,246,0.8)', filter: isSpeaking ? 'drop-shadow(0 0 4px rgba(134,239,172,0.6))' : 'drop-shadow(0 0 4px rgba(139,92,246,0.5))' }} />
               <span className="presence-dot" />
             </div>
 
@@ -400,14 +448,21 @@ function Chat({ onEmotionChange }) {
                 </span>
               </h1>
               <AnimatePresence mode="wait">
-                {isStreaming || remoteTyping ? (
+                {isSpeaking ? (
+                  <motion.p key="speaking" initial={{ opacity: 0, y: -3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
+                    className="text-[10px] italic flex items-center gap-1"
+                    style={{ color: '#86efac' }}>
+                    <Volume2 size={9} />
+                    Speaking…
+                  </motion.p>
+                ) : isStreaming || remoteTyping ? (
                   <motion.p key="streaming" initial={{ opacity: 0, y: -3 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }}
                     className="text-[10px] italic flex items-center gap-1"
                     style={{ color: streamPhase === 'silence' ? '#a78bfa' : 'var(--mm-accent)' }}>
                     {streamPhase === 'silence' && <Moon size={9} />}
                     {streamPhase === 'streaming' && <Zap size={9} />}
                     {streamPhase === 'silence' ? silenceMessage || 'Listening…' :
-                     streamPhase === 'streaming' ? 'Speaking…' :
+                     streamPhase === 'streaming' ? 'Thinking…' :
                      thinkingMessage || 'Thinking…'}
                   </motion.p>
                 ) : (
@@ -442,6 +497,21 @@ function Chat({ onEmotionChange }) {
             <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => handleSlashCommand('/focus')}
               className="p-1.5 rounded-lg hover:bg-blue-500/10 transition-colors" style={{ color: 'var(--mm-text-muted)' }} title="Focus mode">
               <Target size={14} />
+            </motion.button>
+
+            <motion.button
+              whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }}
+              onClick={() => {
+                const next = !ttsEnabled;
+                setTtsEnabled(next);
+                localStorage.setItem('ttsEnabled', String(next));
+                if (!next && window.speechSynthesis) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
+              }}
+              className={`p-1.5 rounded-lg transition-colors ${ttsEnabled ? 'bg-emerald-500/10' : 'hover:bg-white/5'}`}
+              style={{ color: ttsEnabled ? '#86efac' : 'var(--mm-text-muted)' }}
+              title={ttsEnabled ? 'Voice on — tap to mute' : 'Voice off — tap to enable'}
+            >
+              {ttsEnabled ? <Volume2 size={14} /> : <VolumeX size={14} />}
             </motion.button>
 
             <motion.button whileHover={{ scale: 1.05 }} whileTap={{ scale: 0.95 }} onClick={() => setPreferencesOpen(!preferencesOpen)}
@@ -755,10 +825,21 @@ function Chat({ onEmotionChange }) {
         {/* Input Area */}
         <div className="px-5 py-4 border-t border-white/5" style={{ background: 'rgba(10, 14, 26, 0.55)', backdropFilter: 'blur(24px)' }}>
           <div className="flex items-center gap-3">
+            <VoiceInput
+              onTranscript={text => {
+                setInput(prev => (prev ? prev + ' ' + text : text));
+                setTimeout(() => inputRef.current?.focus(), 50);
+              }}
+              disabled={isStreaming}
+            />
             <input
               ref={inputRef}
               value={input}
-              onChange={e => setInput(e.target.value)}
+              onChange={e => {
+                setInput(e.target.value);
+                // Stop TTS when user starts typing a new message
+                if (isSpeaking && window.speechSynthesis) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
+              }}
               onKeyDown={handleKeyDown}
               placeholder={isStreaming ? "Mitra is with you…" : "Say anything…"}
               className="input-glass"
@@ -779,6 +860,10 @@ function Chat({ onEmotionChange }) {
           <div className="relative mt-2.5">
             <div className={`heartbeat-line ${isStreaming ? 'streaming-active' : ''}`} />
           </div>
+          {/* Privacy reminder */}
+          <p className="text-center text-[9px] mt-1.5 opacity-20" style={{ color: 'var(--mm-text-muted)' }}>
+            Voice processed locally · Nothing leaves your device
+          </p>
         </div>
       </div>
     </div>
