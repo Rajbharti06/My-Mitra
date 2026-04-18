@@ -159,13 +159,13 @@ const Sidebar = ({ activeTab, setActiveTab, isCollapsed: externalCollapsed }) =>
             <div className="flex items-center gap-2.5">
               <div 
                 className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-semibold"
-                style={{ 
+                style={{
                   background: 'linear-gradient(135deg, var(--mm-accent), var(--mm-accent-purple))',
                   color: 'white',
                   fontSize: '11px'
                 }}
               >
-                R
+                {(() => { try { return (localStorage.getItem('username') || 'M').charAt(0).toUpperCase(); } catch { return 'M'; } })()}
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-medium truncate" style={{ color: 'var(--mm-text-primary)' }}>

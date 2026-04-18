@@ -7,19 +7,8 @@ const getToken = () => {
 const setToken = (t) => { try { localStorage.setItem('access_token', t); } catch {} };
 const clearToken = () => { try { localStorage.removeItem('access_token'); } catch {} };
 
-// Dev-only: ensure a token exists to access protected endpoints during local testing
-// This uses the backend's built-in "test_token" accepted in development.
-if (process.env.NODE_ENV === 'development') {
-  try {
-    const existing = localStorage.getItem('access_token');
-    if (!existing) {
-      localStorage.setItem('access_token', 'test_token');
-      // Optional: surface in console for awareness
-      // eslint-disable-next-line no-console
-      console.info('[dev] Using test_token for local API access');
-    }
-  } catch {}
-}
+let _onAuthFailure = null;
+export const setAuthFailureCallback = (cb) => { _onAuthFailure = cb; };
 
 const request = async (endpoint, options = {}) => {
     const method = (options.method || 'GET').toUpperCase();
@@ -49,6 +38,7 @@ const request = async (endpoint, options = {}) => {
         const message = errorData.detail || `Request failed with status ${response.status}`;
         // Normalize auth errors for nicer UI messaging
         if (response.status === 401) {
+            if (_onAuthFailure) _onAuthFailure();
             throw new Error('Not authenticated');
         }
         throw new Error(message);
@@ -109,6 +99,19 @@ export const login = async (username, password) => {
         return { access_token: data.access_token, token_type: data.token_type };
     }
     throw new Error('Login response missing token');
+};
+
+export const register = async (username, password) => {
+    const resp = await fetch(`${API_BASE}/register`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ username, password }),
+    });
+    if (!resp.ok) {
+        const data = await resp.json().catch(() => ({}));
+        throw new Error(data.detail || 'Registration failed');
+    }
+    return resp.json();
 };
 
 // Habit endpoints

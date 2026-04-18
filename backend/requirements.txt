@@ -10,3 +10,4 @@ ollama
 chromadb
 sentence-transformers
 python-dotenv
+faster-whisper

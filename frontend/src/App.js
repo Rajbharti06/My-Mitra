@@ -13,6 +13,7 @@ import Journal from './components/Journal';
 // Import existing pages
 import Insights from './pages/Insights';
 import MoodTracking from './pages/MoodTracking';
+import AuthScreen from './Login';
 import * as api from './services/api';
 
 function BreathingBackground({ emotion = 'calm' }) {
@@ -26,6 +27,15 @@ function BreathingBackground({ emotion = 'calm' }) {
 }
 
 function AppContent() {
+  // Auth gate — check localStorage for a real token
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('access_token'));
+
+  // When any API call returns 401, slide back to the auth screen
+  useEffect(() => {
+    api.setAuthFailureCallback(() => setIsLoggedIn(false));
+    return () => api.setAuthFailureCallback(null);
+  }, []);
+
   // Chat is default — presence-first design
   const [activeTab, setActiveTab] = useState('chat');
   const [currentEmotion, setCurrentEmotion] = useState('calm');
@@ -39,6 +49,7 @@ function AppContent() {
   const [memorySaving, setMemorySaving] = useState(false);
 
   useEffect(() => {
+    if (!isLoggedIn) return;
     setMemoryPrefs({
       allow_routine_tracking: true,
       allow_preference_learning: true,
@@ -53,7 +64,12 @@ function AppContent() {
         if (mp) setMemoryPrefs(mp);
       } catch (e) { /* Keep defaults */ }
     })();
-  }, []);
+  }, [isLoggedIn]);
+
+  // Show auth screen if not logged in
+  if (!isLoggedIn) {
+    return <AuthScreen onLogin={() => setIsLoggedIn(true)} />;
+  }
 
   const contentVariants = {
     hidden: { opacity: 0, y: 8 },
@@ -186,9 +202,24 @@ function AppContent() {
                   <h2 className="text-sm font-semibold" style={{ color: 'var(--mm-text-primary)' }}>Privacy First</h2>
                 </div>
                 <p className="text-xs leading-relaxed" style={{ color: 'var(--mm-text-muted)' }}>
-                  All your conversations, journals, and habits are encrypted and stored locally. 
+                  All your conversations, journals, and habits are encrypted and stored locally.
                   No one — not even the admin — can read your data. MyMitra is designed to protect your privacy above everything.
                 </p>
+              </div>
+
+              {/* Sign out */}
+              <div className="glass-elevated rounded-2xl p-5">
+                <h2 className="text-sm font-semibold mb-3" style={{ color: 'var(--mm-text-primary)' }}>Account</h2>
+                <button
+                  className="btn-glow w-full py-2.5 text-xs"
+                  style={{ background: 'rgba(248,113,113,0.1)', borderColor: 'rgba(248,113,113,0.25)', color: '#f87171' }}
+                  onClick={async () => {
+                    await api.logout();
+                    setIsLoggedIn(false);
+                  }}
+                >
+                  Sign out of Mitra
+                </button>
               </div>
             </div>
           </motion.div>

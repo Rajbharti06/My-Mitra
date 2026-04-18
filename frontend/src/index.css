@@ -786,6 +786,15 @@ body {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.15), 0 0 16px rgba(59, 130, 246, 0.1);
 }
 
+/* Speaking pulse — Mitra header avatar animation when TTS is active */
+.speaking-pulse {
+  animation: speakPulse 1.4s ease-in-out infinite;
+}
+@keyframes speakPulse {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(134, 239, 172, 0); }
+  50%       { box-shadow: 0 0 0 6px rgba(134, 239, 172, 0.18), 0 0 20px rgba(134, 239, 172, 0.12); }
+}
+
 /* Toggle Switch */
 .toggle-switch {
   position: relative;

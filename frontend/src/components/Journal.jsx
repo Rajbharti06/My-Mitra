@@ -1,308 +1,366 @@
-import React, { useState, useEffect } from 'react';
+/**
+ * Journal — Inspired by Bear Notes (clean typography), Day One (date-first entries),
+ * and Reflectly (emotion-aware journaling). Fully uses the MyMitra design system.
+ */
+import React, { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Calendar, Save, BookOpen, Heart, Smile, Frown, Meh, Angry, Plus, MoreVertical, Edit, Trash2 } from 'lucide-react';
+import { Plus, Save, Trash2, Edit2 } from 'lucide-react';
 import { toast } from 'react-toastify';
-import { getEmotionColor, getEmotionEmoji } from '../utils/theme';
 
-const Journal = () => {
-  const [entries, setEntries] = useState([]);
-  const [currentEntry, setCurrentEntry] = useState('');
-  const [selectedEmotion, setSelectedEmotion] = useState('neutral');
-  const [selectedDate, setSelectedDate] = useState(new Date().toISOString().split('T')[0]);
-  const [isWriting, setIsWriting] = useState(false);
-  const [editingId, setEditingId] = useState(null);
+// Emotion config — inline styles, NOT dynamic Tailwind class names
+const EMOTIONS = [
+  { id: 'happy',     label: 'Happy',     emoji: '😊', color: '#fbbf24' },
+  { id: 'grateful',  label: 'Grateful',  emoji: '🙏', color: '#34d399' },
+  { id: 'calm',      label: 'Calm',      emoji: '😌', color: '#60a5fa' },
+  { id: 'neutral',   label: 'Neutral',   emoji: '😐', color: '#94a3b8' },
+  { id: 'sad',       label: 'Sad',       emoji: '😔', color: '#818cf8' },
+  { id: 'anxious',   label: 'Anxious',   emoji: '😰', color: '#c084fc' },
+  { id: 'stressed',  label: 'Stressed',  emoji: '😤', color: '#fb923c' },
+  { id: 'angry',     label: 'Frustrated',emoji: '😡', color: '#f87171' },
+];
 
-  useEffect(() => {
-    // Load journal entries from localStorage
-    const savedEntries = localStorage.getItem('journalEntries');
-    if (savedEntries) {
-      setEntries(JSON.parse(savedEntries));
-    }
-  }, []);
+function getEmotion(id) {
+  return EMOTIONS.find(e => e.id === id) || EMOTIONS[3];
+}
 
-  const saveEntry = () => {
-    if (!currentEntry.trim()) {
-      toast.error('Please write something before saving');
-      return;
-    }
+function formatDate(iso) {
+  const d = new Date(iso);
+  return d.toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' });
+}
 
-    const baseEntry = {
-      date: selectedDate,
-      content: currentEntry.trim(),
-      emotion: selectedEmotion,
-      timestamp: new Date().toISOString(),
-      wordCount: currentEntry.trim().split(/\s+/).length
-    };
+function formatTime(iso) {
+  return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+}
 
-    let updatedEntries;
-    if (editingId) {
-      updatedEntries = entries.map(e => e.id === editingId ? { ...e, ...baseEntry } : e);
-      toast.success('Journal entry updated ✏️');
-    } else {
-      const newEntry = { id: Date.now(), ...baseEntry };
-      updatedEntries = [newEntry, ...entries];
-      toast.success('Journal entry saved! 📝');
-    }
-
-    setEntries(updatedEntries);
-    localStorage.setItem('journalEntries', JSON.stringify(updatedEntries));
-    
-    setCurrentEntry('');
-    setSelectedEmotion('neutral');
-    setIsWriting(false);
-    setEditingId(null);
-  };
-
-  const startEdit = (entry) => {
-    setIsWriting(true);
-    setCurrentEntry(entry.content);
-    setSelectedEmotion(entry.emotion);
-    setSelectedDate(entry.date);
-    setEditingId(entry.id);
-  };
-
-  const deleteEntry = (id) => {
-    const updated = entries.filter(e => e.id !== id);
-    setEntries(updated);
-    localStorage.setItem('journalEntries', JSON.stringify(updated));
-    toast.success('Entry deleted 🗑️');
-  };
-
-  const EmotionSelector = () => {
-    const emotions = [
-      { name: 'happy', icon: Smile, label: 'Happy' },
-      { name: 'love', icon: Heart, label: 'Grateful' },
-      { name: 'neutral', icon: Meh, label: 'Neutral' },
-      { name: 'sad', icon: Frown, label: 'Sad' },
-      { name: 'angry', icon: Angry, label: 'Frustrated' }
-    ];
-
-    return (
-      <div className="flex items-center gap-2 mb-4">
-        <span className="text-sm text-gray-600 dark:text-gray-400 mr-2">Today's mood:</span>
-        {emotions.map(({ name, icon: Icon, label }) => (
-          <motion.button
-            key={name}
-            whileHover={{ scale: 1.1 }}
-            whileTap={{ scale: 0.95 }}
-            onClick={() => setSelectedEmotion(name)}
-            className={`p-2 rounded-full transition-all duration-200 ${
-              selectedEmotion === name
-                ? `bg-${getEmotionColor(name)}-100 text-${getEmotionColor(name)}-600 dark:bg-${getEmotionColor(name)}-900 dark:text-${getEmotionColor(name)}-300 ring-2 ring-${getEmotionColor(name)}-300`
-                : 'bg-gray-100 text-gray-600 hover:bg-gray-200 dark:bg-gray-700 dark:text-gray-300 dark:hover:bg-gray-600'
-            }`}
-            title={label}
-          >
-            <Icon size={16} />
-          </motion.button>
-        ))}
-      </div>
-    );
-  };
-
-  const JournalEntry = ({ entry, onEdit, onDelete }) => {
-    const emotionColor = getEmotionColor(entry.emotion);
-    const emotionEmoji = getEmotionEmoji(entry.emotion);
-    const [menuOpen, setMenuOpen] = useState(false);
-
-    return (
-      <motion.div
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-soft border-l-4"
-        style={{ borderLeftColor: `var(--color-${emotionColor}-500)` }}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-xl">{emotionEmoji}</span>
-            <span className="text-sm text-gray-500 dark:text-gray-400">
-              {new Date(entry.date).toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <div className="text-xs text-gray-400 dark:text-gray-500 mr-1">
-              {entry.wordCount} words
-            </div>
-            <div className="relative">
-              <button
-                onClick={() => setMenuOpen(v => !v)}
-                className="p-2 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-500 dark:text-gray-400"
-                title="Options"
-              >
-                <MoreVertical size={16} />
-              </button>
-              {menuOpen && (
-                <div className="absolute right-0 mt-2 w-36 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg shadow-soft z-10">
-                  <button
-                    onClick={() => { setMenuOpen(false); onEdit(entry); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-gray-100 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-200"
-                  >
-                    <Edit size={14} /> Edit
-                  </button>
-                  <button
-                    onClick={() => { setMenuOpen(false); onDelete(entry.id); }}
-                    className="w-full flex items-center gap-2 px-3 py-2 text-sm hover:bg-red-50 dark:hover:bg-red-900/30 text-red-600 dark:text-red-300"
-                  >
-                    <Trash2 size={14} /> Delete
-                  </button>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-        <p className="text-gray-700 dark:text-gray-300 leading-relaxed whitespace-pre-wrap">
-          {entry.content}
-        </p>
-        <div className="text-xs text-gray-400 dark:text-gray-500 mt-3">
-          {new Date(entry.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-        </div>
-      </motion.div>
-    );
-  };
+function EntryCard({ entry, onEdit, onDelete }) {
+  const [menuOpen, setMenuOpen] = useState(false);
+  const em = getEmotion(entry.emotion);
 
   return (
-    <div className="min-h-screen bg-cream dark:bg-dark-bg p-6">
-      <div className="max-w-4xl mx-auto">
-        {/* Header */}
-        <motion.div
-          initial={{ opacity: 0, y: -20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="text-center mb-8"
-        >
-          <div className="flex items-center justify-center gap-3 mb-2">
-            <BookOpen className="text-warm-brown dark:text-dark-accent" size={32} />
-            <h1 className="text-3xl font-bold text-warm-brown dark:text-dark-accent">
-              Reflection Journal
-            </h1>
+    <motion.div
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -8, scale: 0.97 }}
+      style={{
+        background: 'var(--mm-surface-elevated)',
+        backdropFilter: 'blur(20px)',
+        border: '1px solid var(--mm-border)',
+        borderLeft: `3px solid ${em.color}`,
+        borderRadius: 'var(--mm-radius-xl)',
+        padding: '1.1rem 1.25rem',
+        position: 'relative',
+      }}
+    >
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: '0.6rem' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: '1.25rem' }}>{em.emoji}</span>
+          <div>
+            <p style={{ fontSize: '0.78rem', fontWeight: 500, color: 'var(--mm-text-secondary)' }}>
+              {formatDate(entry.date)}
+            </p>
+            <p style={{ fontSize: '0.68rem', color: 'var(--mm-text-muted)' }}>
+              {formatTime(entry.timestamp)} · {entry.wordCount || 0} words
+            </p>
           </div>
-          <p className="text-gray-600 dark:text-gray-400">
-            A safe space for your thoughts, feelings, and daily reflections
-          </p>
-        </motion.div>
+        </div>
 
-        {/* Writing Area */}
-        <motion.div
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          className="bg-gradient-to-br from-white to-cream dark:from-gray-800 dark:to-gray-900 rounded-2xl p-6 shadow-soft mb-8"
-        >
-          <div className="flex items-center gap-4 mb-4">
-            <div className="flex items-center gap-2">
-              <Calendar size={20} className="text-gray-500 dark:text-gray-400" />
-              <input
-                type="date"
-                value={selectedDate}
-                onChange={(e) => setSelectedDate(e.target.value)}
-                className="bg-transparent border-none text-gray-700 dark:text-gray-300 focus:outline-none"
-              />
-            </div>
-            {!isWriting && (
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setIsWriting(true)}
-                className="ml-auto flex items-center gap-2 px-4 py-2 bg-warm-brown text-white rounded-xl hover:bg-warm-brown/90 transition-colors"
-              >
-                <Plus size={16} />
-                New Entry
-              </motion.button>
-            )}
-          </div>
-
+        {/* Menu */}
+        <div style={{ position: 'relative' }}>
+          <button
+            onClick={() => setMenuOpen(v => !v)}
+            style={{
+              background: 'none', border: 'none',
+              color: 'var(--mm-text-muted)', cursor: 'pointer',
+              padding: 4, borderRadius: 6, opacity: 0.7,
+            }}
+          >
+            •••
+          </button>
           <AnimatePresence>
-            {isWriting && (
+            {menuOpen && (
               <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="space-y-4"
+                initial={{ opacity: 0, scale: 0.92, y: -4 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                style={{
+                  position: 'absolute', right: 0, top: '100%', zIndex: 20,
+                  background: 'rgba(15,23,42,0.95)', backdropFilter: 'blur(20px)',
+                  border: '1px solid var(--mm-border)', borderRadius: 10,
+                  overflow: 'hidden', minWidth: 130, marginTop: 4,
+                  boxShadow: 'var(--mm-shadow-md)',
+                }}
               >
-                <EmotionSelector />
-                
-                <textarea
-                  value={currentEntry}
-                  onChange={(e) => setCurrentEntry(e.target.value)}
-                  placeholder="What's on your mind today? Share your thoughts, feelings, experiences, or anything you'd like to reflect on..."
-                  className="w-full h-48 p-4 bg-white dark:bg-gray-700 border border-gray-200 dark:border-gray-600 rounded-xl resize-none focus:outline-none focus:ring-2 focus:ring-warm-brown dark:focus:ring-dark-accent text-gray-800 dark:text-gray-200 placeholder-gray-500 dark:placeholder-gray-400 leading-relaxed"
-                  style={{ fontFamily: 'inherit' }}
-                />
-                
-                <div className="flex items-center justify-between">
-                  <div className="text-sm text-gray-500 dark:text-gray-400">
-                    {currentEntry.trim() ? `${currentEntry.trim().split(/\s+/).length} words` : '0 words'}
-                  </div>
-                  <div className="flex gap-2">
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={() => {
-                        setIsWriting(false);
-                        setCurrentEntry('');
-                        setSelectedEmotion('neutral');
-                      }}
-                      className="px-4 py-2 text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 transition-colors"
-                    >
-                      Cancel
-                    </motion.button>
-                    <motion.button
-                      whileHover={{ scale: 1.05 }}
-                      whileTap={{ scale: 0.95 }}
-                      onClick={saveEntry}
-                      className="flex items-center gap-2 px-6 py-2 bg-warm-brown text-white rounded-xl hover:bg-warm-brown/90 transition-colors"
-                    >
-                      <Save size={16} />
-                      Save Entry
-                    </motion.button>
-                  </div>
-                </div>
+                <button
+                  onClick={() => { setMenuOpen(false); onEdit(entry); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    width: '100%', padding: '0.55rem 0.9rem',
+                    background: 'none', border: 'none',
+                    color: 'var(--mm-text-secondary)', fontSize: '0.8rem', cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(59,130,246,0.1)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                >
+                  <Edit2 size={13} /> Edit
+                </button>
+                <button
+                  onClick={() => { setMenuOpen(false); onDelete(entry.id); }}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: 8,
+                    width: '100%', padding: '0.55rem 0.9rem',
+                    background: 'none', border: 'none',
+                    color: '#f87171', fontSize: '0.8rem', cursor: 'pointer',
+                    textAlign: 'left',
+                  }}
+                  onMouseEnter={e => e.currentTarget.style.background = 'rgba(248,113,113,0.08)'}
+                  onMouseLeave={e => e.currentTarget.style.background = 'none'}
+                >
+                  <Trash2 size={13} /> Delete
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
-        </motion.div>
-
-        {/* Journal Entries */}
-        <div className="space-y-6">
-          {entries.length === 0 ? (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="text-center py-12"
-            >
-              <BookOpen size={48} className="mx-auto text-gray-400 dark:text-gray-600 mb-4" />
-              <h3 className="text-xl font-semibold text-gray-600 dark:text-gray-400 mb-2">
-                Your journal is empty
-              </h3>
-              <p className="text-gray-500 dark:text-gray-500 mb-4">
-                Start writing your first entry to begin your reflection journey
-              </p>
-              <motion.button
-                whileHover={{ scale: 1.05 }}
-                whileTap={{ scale: 0.95 }}
-                onClick={() => setIsWriting(true)}
-                className="px-6 py-3 bg-warm-brown text-white rounded-xl hover:bg-warm-brown/90 transition-colors"
-              >
-                Write Your First Entry
-              </motion.button>
-            </motion.div>
-          ) : (
-            <div className="space-y-6">
-              <h2 className="text-xl font-semibold text-gray-800 dark:text-gray-200 mb-4">
-                Your Reflections ({entries.length} entries)
-              </h2>
-              {entries.map((entry) => (
-                <JournalEntry key={entry.id} entry={entry} onEdit={startEdit} onDelete={deleteEntry} />
-              ))}
-            </div>
-          )}
         </div>
       </div>
+
+      {/* Content */}
+      <p style={{
+        fontSize: '0.875rem', lineHeight: 1.7,
+        color: 'var(--mm-text-primary)',
+        whiteSpace: 'pre-wrap',
+        wordBreak: 'break-word',
+      }}>
+        {entry.content}
+      </p>
+    </motion.div>
+  );
+}
+
+function WritePanel({ initial, onSave, onCancel }) {
+  const [content, setContent] = useState(initial?.content || '');
+  const [emotion, setEmotion] = useState(initial?.emotion || 'neutral');
+  const textRef = useRef(null);
+
+  useEffect(() => {
+    textRef.current?.focus();
+  }, []);
+
+  const wordCount = content.trim() ? content.trim().split(/\s+/).length : 0;
+
+  const handleSave = () => {
+    if (!content.trim()) { toast.error('Write something first'); return; }
+    onSave({ content: content.trim(), emotion, id: initial?.id });
+  };
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 16 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -12 }}
+      className="glass-elevated"
+      style={{ borderRadius: 'var(--mm-radius-2xl)', padding: '1.5rem', marginBottom: '1.5rem' }}
+    >
+      {/* Emotion selector */}
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.45rem', marginBottom: '1rem' }}>
+        {EMOTIONS.map(em => (
+          <motion.button
+            key={em.id}
+            whileHover={{ scale: 1.06 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => setEmotion(em.id)}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5,
+              padding: '0.3rem 0.7rem', borderRadius: 20,
+              background: emotion === em.id ? `${em.color}20` : 'rgba(71,85,105,0.12)',
+              border: emotion === em.id ? `1px solid ${em.color}50` : '1px solid transparent',
+              color: emotion === em.id ? em.color : 'var(--mm-text-muted)',
+              fontSize: '0.75rem', fontWeight: 500, cursor: 'pointer',
+              transition: 'all 0.2s',
+            }}
+          >
+            <span style={{ fontSize: '0.9rem' }}>{em.emoji}</span>
+            {em.label}
+          </motion.button>
+        ))}
+      </div>
+
+      {/* Textarea */}
+      <textarea
+        ref={textRef}
+        value={content}
+        onChange={e => setContent(e.target.value)}
+        placeholder="What's on your mind today?&#10;&#10;This is your safe space. Write freely — Mitra will remember the essence."
+        style={{
+          width: '100%', minHeight: 180,
+          background: 'transparent', border: 'none',
+          color: 'var(--mm-text-primary)', fontSize: '0.925rem',
+          lineHeight: 1.75, resize: 'none',
+          fontFamily: 'inherit', outline: 'none',
+          marginBottom: '0.75rem',
+        }}
+      />
+
+      {/* Footer */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <span style={{ fontSize: '0.72rem', color: 'var(--mm-text-muted)' }}>
+          {wordCount > 0 ? `${wordCount} word${wordCount !== 1 ? 's' : ''}` : 'Start writing…'}
+        </span>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <button
+            onClick={onCancel}
+            style={{
+              background: 'none', border: 'none',
+              color: 'var(--mm-text-muted)', fontSize: '0.82rem',
+              cursor: 'pointer', padding: '0.4rem 0.8rem', borderRadius: 8,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            className="btn-glow"
+            onClick={handleSave}
+            style={{ padding: '0.4rem 1rem', fontSize: '0.82rem', display: 'flex', alignItems: 'center', gap: 5 }}
+          >
+            <Save size={13} />
+            {initial ? 'Update' : 'Save'}
+          </button>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
+export default function Journal() {
+  const [entries, setEntries] = useState(() => {
+    try { return JSON.parse(localStorage.getItem('journalEntries') || '[]'); } catch { return []; }
+  });
+  const [writing, setWriting] = useState(false);
+  const [editing, setEditing] = useState(null);
+
+  const persist = (next) => {
+    setEntries(next);
+    localStorage.setItem('journalEntries', JSON.stringify(next));
+  };
+
+  const handleSave = ({ content, emotion, id }) => {
+    if (id) {
+      const next = entries.map(e =>
+        e.id === id
+          ? { ...e, content, emotion, wordCount: content.split(/\s+/).length, timestamp: new Date().toISOString() }
+          : e
+      );
+      persist(next);
+      toast.success('Entry updated');
+      setEditing(null);
+    } else {
+      const entry = {
+        id: Date.now(),
+        content, emotion,
+        date: new Date().toISOString(),
+        timestamp: new Date().toISOString(),
+        wordCount: content.split(/\s+/).length,
+      };
+      persist([entry, ...entries]);
+      toast.success('Entry saved');
+      setWriting(false);
+    }
+  };
+
+  const handleDelete = (id) => {
+    persist(entries.filter(e => e.id !== id));
+    toast.success('Entry deleted');
+  };
+
+  const handleEdit = (entry) => {
+    setEditing(entry);
+    setWriting(false);
+  };
+
+  return (
+    <div style={{ maxWidth: 680, margin: '0 auto', padding: '1.5rem 1rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+        <div>
+          <h1 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--mm-text-primary)', marginBottom: 2 }}>
+            Journal
+          </h1>
+          <p style={{ fontSize: '0.78rem', color: 'var(--mm-text-muted)' }}>
+            {entries.length > 0
+              ? `${entries.length} entr${entries.length !== 1 ? 'ies' : 'y'}`
+              : 'Your private space'}
+          </p>
+        </div>
+
+        {!writing && !editing && (
+          <motion.button
+            className="btn-glow"
+            style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 5 }}
+            onClick={() => setWriting(true)}
+            whileTap={{ scale: 0.96 }}
+          >
+            <Plus size={14} />
+            Write
+          </motion.button>
+        )}
+      </div>
+
+      {/* Write / Edit panel */}
+      <AnimatePresence mode="wait">
+        {writing && (
+          <WritePanel
+            key="new"
+            onSave={handleSave}
+            onCancel={() => setWriting(false)}
+          />
+        )}
+        {editing && (
+          <WritePanel
+            key={editing.id}
+            initial={editing}
+            onSave={handleSave}
+            onCancel={() => setEditing(null)}
+          />
+        )}
+      </AnimatePresence>
+
+      {/* Entries */}
+      {entries.length === 0 && !writing ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          style={{ textAlign: 'center', padding: '4rem 1rem' }}
+        >
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>📔</div>
+          <p style={{ color: 'var(--mm-text-secondary)', fontSize: '0.95rem', fontWeight: 500, marginBottom: '0.4rem' }}>
+            Your journal is empty
+          </p>
+          <p style={{ color: 'var(--mm-text-muted)', fontSize: '0.82rem', marginBottom: '1.5rem' }}>
+            Writing for 5 minutes a day changes how you see your life.
+          </p>
+          <button
+            className="btn-glow"
+            style={{ padding: '0.6rem 1.4rem', fontSize: '0.85rem' }}
+            onClick={() => setWriting(true)}
+          >
+            Write your first entry
+          </button>
+        </motion.div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '0.875rem' }}>
+          <AnimatePresence>
+            {entries.map(entry => (
+              <EntryCard
+                key={entry.id}
+                entry={entry}
+                onEdit={handleEdit}
+                onDelete={handleDelete}
+              />
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
     </div>
   );
-};
-
-export default Journal;
+}

@@ -1,312 +1,385 @@
+/**
+ * HabitTracker — Inspired by Streaks (Apple Watch rings), Duolingo (streak fire),
+ * and Finch (self-care companion feel). Fully uses the MyMitra design system.
+ */
 import React, { useState, useEffect, useCallback } from 'react';
-import { motion } from 'framer-motion';
-import { CheckCircle2, Circle, Target, TrendingUp, Trash2, Plus } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { Plus, Trash2, Flame, Check } from 'lucide-react';
 import * as api from '../services/api';
 
-const defaultHabits = [
-  { id: 1, name: 'Morning Meditation', progress: 85, target: 100, icon: '🧘' },
-  { id: 2, name: 'Daily Exercise', progress: 60, target: 100, icon: '💪' },
-  { id: 3, name: 'Read for 30min', progress: 40, target: 100, icon: '📚' },
-  { id: 4, name: 'Drink 8 glasses water', progress: 75, target: 100, icon: '💧' },
-  { id: 5, name: 'Practice gratitude', progress: 90, target: 100, icon: '🙏' },
-];
+const HABIT_EMOJIS = ['⭐', '🧘', '💪', '📚', '💧', '🎯', '🌱', '🔥', '✍️', '🏃', '🎨', '🎵', '🌿', '🧠', '😴'];
 
-const HabitTracker = ({ habits = defaultHabits, compact = false }) => {
-  const [localHabits, setLocalHabits] = useState(habits);
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
-  const [newTitle, setNewTitle] = useState('');
-  const [newFrequency, setNewFrequency] = useState('daily');
-  const [newDescription, setNewDescription] = useState('');
+function RingProgress({ progress, size = 54, strokeWidth = 5 }) {
+  const r = (size - strokeWidth) / 2;
+  const circ = 2 * Math.PI * r;
+  const clamped = Math.min(100, Math.max(0, progress));
+  const offset = circ - (clamped / 100) * circ;
+  const color = clamped >= 100 ? '#34d399' : clamped >= 60 ? '#60a5fa' : '#8b5cf6';
 
-  const toggleHabit = async (habitId) => {
-    setLocalHabits(prev =>
-      prev.map(habit =>
-        habit.id === habitId
-          ? { ...habit, progress: habit.progress >= 100 ? 0 : 100 }
-          : habit
-      )
-    );
-    // Try to mark complete in backend if this is a real habit id
-    try {
-      await api.completeHabit(habitId);
-    } catch (e) {
-      // ignore; completion not critical for add/delete feature
+  return (
+    <svg width={size} height={size} style={{ transform: 'rotate(-90deg)' }}>
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="rgba(71,85,105,0.18)" strokeWidth={strokeWidth} />
+      <motion.circle
+        cx={size / 2} cy={size / 2} r={r} fill="none"
+        stroke={color} strokeWidth={strokeWidth}
+        strokeDasharray={circ}
+        initial={{ strokeDashoffset: circ }}
+        animate={{ strokeDashoffset: offset }}
+        transition={{ duration: 1, ease: [0.4, 0, 0.2, 1] }}
+        strokeLinecap="round"
+      />
+    </svg>
+  );
+}
+
+function HabitCard({ habit, index, onComplete, onDelete }) {
+  const [hovered, setHovered] = useState(false);
+  const [justDone, setJustDone] = useState(false);
+
+  const handleComplete = () => {
+    if (!justDone) {
+      setJustDone(true);
+      setTimeout(() => setJustDone(false), 800);
     }
+    onComplete(habit.id);
   };
 
-  // Map backend habit data to chart items
-  const mapHabitsToChart = useCallback((items) => (
-    items.map(h => ({
+  return (
+    <motion.div
+      initial={{ opacity: 0, scale: 0.93, y: 14 }}
+      animate={{ opacity: 1, scale: 1, y: 0 }}
+      exit={{ opacity: 0, scale: 0.9, y: -8 }}
+      transition={{ delay: index * 0.055 }}
+      whileHover={{ y: -3, transition: { duration: 0.2 } }}
+      whileTap={{ scale: 0.97 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={handleComplete}
+      style={{
+        position: 'relative',
+        background: 'var(--mm-surface-elevated)',
+        backdropFilter: 'blur(24px)',
+        border: habit.progress >= 100
+          ? '1px solid rgba(52,211,153,0.3)'
+          : '1px solid var(--mm-border)',
+        borderRadius: 'var(--mm-radius-xl)',
+        padding: '1.1rem',
+        cursor: 'pointer',
+        transition: 'border 0.35s',
+        boxShadow: habit.progress >= 100
+          ? '0 0 20px rgba(52,211,153,0.08)'
+          : 'var(--mm-shadow-sm)',
+        minHeight: 140,
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '0.6rem',
+      }}
+    >
+      {/* Top: ring + delete */}
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between' }}>
+        <div style={{ position: 'relative', width: 54, height: 54, flexShrink: 0 }}>
+          <RingProgress progress={habit.progress} />
+          <AnimatePresence mode="wait">
+            {justDone ? (
+              <motion.div
+                key="check"
+                initial={{ scale: 0, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0, opacity: 0 }}
+                style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+              >
+                <Check size={22} style={{ color: '#34d399' }} />
+              </motion.div>
+            ) : (
+              <motion.div
+                key="emoji"
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '1.25rem' }}
+              >
+                {habit.icon}
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <motion.button
+          onClick={e => { e.stopPropagation(); onDelete(habit.id); }}
+          animate={{ opacity: hovered ? 1 : 0 }}
+          transition={{ duration: 0.15 }}
+          style={{
+            background: 'none', border: 'none',
+            color: 'var(--mm-text-muted)', cursor: 'pointer',
+            padding: 4, borderRadius: 6,
+          }}
+          whileHover={{ color: '#f87171' }}
+        >
+          <Trash2 size={13} />
+        </motion.button>
+      </div>
+
+      {/* Name */}
+      <p style={{
+        fontSize: '0.84rem', fontWeight: 500,
+        color: 'var(--mm-text-primary)', lineHeight: 1.35,
+        flex: 1,
+      }}>
+        {habit.name}
+      </p>
+
+      {/* Streak + frequency */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+          <Flame size={13} style={{ color: habit.streak > 0 ? '#fb923c' : 'var(--mm-text-muted)' }} />
+          <span style={{
+            fontSize: '0.7rem', fontWeight: 600,
+            color: habit.streak > 0 ? '#fb923c' : 'var(--mm-text-muted)',
+          }}>
+            {habit.streak} day{habit.streak !== 1 ? 's' : ''}
+          </span>
+        </div>
+        <span style={{ fontSize: '0.68rem', color: 'var(--mm-text-muted)', textTransform: 'capitalize' }}>
+          {habit.frequency}
+        </span>
+      </div>
+    </motion.div>
+  );
+}
+
+export default function HabitTracker() {
+  const [habits, setHabits] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [newTitle, setNewTitle] = useState('');
+  const [newFrequency, setNewFrequency] = useState('daily');
+  const [addingOpen, setAddingOpen] = useState(false);
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  const mapHabits = useCallback((items) =>
+    items.map((h, i) => ({
       id: h.id,
-      name: h.title,
-      progress: Math.min(100, (h.streak_count || 0) * 10),
-      target: 100,
-      icon: '⭐'
+      name: h.title || h.name || 'Habit',
+      progress: Math.min(100, (h.streak_count || 0) * 15),
+      streak: h.streak_count || 0,
+      frequency: h.frequency || 'daily',
+      icon: HABIT_EMOJIS[i % HABIT_EMOJIS.length],
     }))
-  ), []);
+  , []);
 
   const fetchHabits = useCallback(async () => {
     setLoading(true);
     setError('');
     try {
       const data = await api.getHabits();
-      setLocalHabits(mapHabitsToChart(data));
-    } catch (e) {
-      setError('Could not load habits');
+      setHabits(mapHabits(data));
+    } catch {
+      setError('Could not load habits.');
     } finally {
       setLoading(false);
     }
-  }, [mapHabitsToChart]);
+  }, [mapHabits]);
 
   useEffect(() => { fetchHabits(); }, [fetchHabits]);
 
-  const handleAddHabit = async () => {
-    if (!newTitle.trim()) {
-      setError('Please enter habit title');
-      return;
-    }
+  const handleComplete = async (id) => {
+    setHabits(prev => prev.map(h =>
+      h.id === id
+        ? { ...h, progress: Math.min(100, h.progress + 15), streak: h.streak + 1 }
+        : h
+    ));
+    try { await api.completeHabit(id); } catch {}
+  };
+
+  const handleAdd = async () => {
+    if (!newTitle.trim()) return;
     setError('');
-      setLoading(true);
-      try {
-        await api.createHabit(newTitle.trim(), newFrequency, newDescription || null);
+    try {
+      await api.createHabit({ title: newTitle.trim(), frequency: newFrequency });
       setNewTitle('');
-      setNewFrequency('daily');
-      setNewDescription('');
+      setAddingOpen(false);
       await fetchHabits();
     } catch (e) {
       setError(e.message || 'Could not create habit');
-    } finally {
-      setLoading(false);
     }
   };
 
-  const handleDeleteHabit = async (habitId) => {
-    setError('');
+  const handleDelete = async (id) => {
     try {
-      await api.deleteHabit(habitId);
-      await fetchHabits();
+      await api.deleteHabit(id);
+      setHabits(prev => prev.filter(h => h.id !== id));
     } catch (e) {
-      setError(e.message || 'Could not delete habit');
+      setError(e.message || 'Could not delete');
     } finally {
       setConfirmDeleteId(null);
     }
   };
 
-  const getProgressColor = (progress) => {
-    if (progress >= 100) return 'text-green-500';
-    if (progress >= 75) return 'text-yellow-500';
-    if (progress >= 50) return 'text-orange-500';
-    return 'text-red-400';
-  };
-
-  const getProgressBg = (progress) => {
-    if (progress >= 100) return 'bg-green-500';
-    if (progress >= 75) return 'bg-yellow-500';
-    if (progress >= 50) return 'bg-orange-500';
-    return 'bg-red-400';
-  };
-
-  if (compact) {
-    return (
-      <motion.div
-        className="bg-gradient-to-br from-soft-white to-card-light dark:from-gray-800 dark:to-gray-700 
-                   rounded-2xl p-4 shadow-soft border border-gray-100 dark:border-gray-600"
-        initial={{ opacity: 0, scale: 0.95 }}
-        animate={{ opacity: 1, scale: 1 }}
-        transition={{ duration: 0.5 }}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <h3 className="text-sm font-semibold text-warm-brown dark:text-dark-accent flex items-center">
-            <Target className="w-4 h-4 mr-2" />
-            Today's Habits
-          </h3>
-          <span className="text-xs text-gray-500">
-            {localHabits.filter(h => h.progress >= 100).length}/{localHabits.length}
-          </span>
-        </div>
-        
-        <div className="space-y-2">
-          {localHabits.slice(0, 3).map((habit, index) => (
-            <motion.div
-              key={habit.id}
-              className="flex items-center justify-between p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors cursor-pointer"
-              onClick={() => toggleHabit(habit.id)}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: index * 0.1 }}
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
-            >
-              <div className="flex items-center space-x-2">
-                <span className="text-sm">{habit.icon}</span>
-                <span className="text-xs font-medium text-gray-700 dark:text-gray-200 truncate">
-                  {habit.name}
-                </span>
-              </div>
-              
-              <div className="flex items-center space-x-2">
-                <div className="w-12 h-1.5 bg-gray-200 dark:bg-gray-600 rounded-full overflow-hidden">
-                  <motion.div
-                    className={`h-full ${getProgressBg(habit.progress)} rounded-full`}
-                    initial={{ width: 0 }}
-                    animate={{ width: `${habit.progress}%` }}
-                    transition={{ duration: 0.8, delay: index * 0.1 }}
-                  />
-                </div>
-                {habit.progress >= 100 ? (
-                  <CheckCircle2 className="w-4 h-4 text-green-500" />
-                ) : (
-                  <Circle className="w-4 h-4 text-gray-400" />
-                )}
-              </div>
-            </motion.div>
-          ))}
-        </div>
-      </motion.div>
-    );
-  }
+  const completedCount = habits.filter(h => h.progress >= 100).length;
+  const totalStreak = habits.reduce((s, h) => s + h.streak, 0);
 
   return (
-    <motion.div
-      className="bg-gradient-to-br from-soft-white to-card-light dark:from-gray-800 dark:to-gray-700 
-                 rounded-2xl p-6 shadow-soft border border-gray-100 dark:border-gray-600"
-      initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ duration: 0.5 }}
-    >
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-xl font-semibold text-warm-brown dark:text-dark-accent flex items-center">
-          <Target className="w-5 h-5 mr-2" />
-          Daily Habits
-        </h2>
-        <div className="flex items-center space-x-2 text-sm text-gray-500">
-          <TrendingUp className="w-4 h-4" />
-          <span>{localHabits.filter(h => h.progress >= 100).length}/{localHabits.length} completed</span>
+    <div style={{ maxWidth: 680, margin: '0 auto', padding: '1.5rem 1rem' }}>
+      {/* Header */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'space-between', marginBottom: '1.25rem' }}>
+        <div>
+          <h1 style={{ fontSize: '1.2rem', fontWeight: 600, color: 'var(--mm-text-primary)', marginBottom: 2 }}>
+            Habits
+          </h1>
+          {habits.length > 0 && (
+            <p style={{ fontSize: '0.78rem', color: 'var(--mm-text-muted)' }}>
+              {completedCount}/{habits.length} today
+              {totalStreak > 0 && <span style={{ marginLeft: 8, color: '#fb923c' }}>🔥 {totalStreak} total streak</span>}
+            </p>
+          )}
         </div>
+
+        <motion.button
+          className="btn-glow"
+          style={{ padding: '0.45rem 0.9rem', fontSize: '0.8rem', display: 'flex', alignItems: 'center', gap: 5 }}
+          onClick={() => setAddingOpen(v => !v)}
+          whileTap={{ scale: 0.96 }}
+        >
+          <Plus size={14} />
+          Add
+        </motion.button>
       </div>
 
-      {error && (
-        <div className="mb-4 text-sm text-red-600">{error}</div>
-      )}
-
-      {/* Inline Add New Habit */}
-      <div className="mb-6 flex flex-wrap items-center gap-3">
-        <input
-          className="flex-1 min-w-52 px-3 py-2 rounded-lg border border-gray-300 focus:outline-none focus:ring-2 focus:ring-warm-brown"
-          placeholder="New habit title"
-          value={newTitle}
-          onChange={e => setNewTitle(e.target.value)}
-        />
-        <select
-          className="px-3 py-2 rounded-lg border border-gray-300"
-          value={newFrequency}
-          onChange={e => setNewFrequency(e.target.value)}
-        >
-          <option value="daily">Daily</option>
-          <option value="weekly">Weekly</option>
-          <option value="monthly">Monthly</option>
-        </select>
-        <input
-          className="flex-1 min-w-52 px-3 py-2 rounded-lg border border-gray-300"
-          placeholder="Description (optional)"
-          value={newDescription}
-          onChange={e => setNewDescription(e.target.value)}
-        />
-        <button
-          onClick={handleAddHabit}
-          className="px-4 py-2 rounded-lg bg-warm-brown text-white font-semibold flex items-center gap-2 hover:bg-warm-brown/90"
-        >
-          <Plus className="w-4 h-4" /> Add
-        </button>
-      </div>
-
-      <div className="space-y-4">
-        {localHabits.map((habit, index) => (
+      {/* Add form */}
+      <AnimatePresence>
+        {addingOpen && (
           <motion.div
-            key={habit.id}
-            className="group p-4 rounded-xl hover:bg-gray-50 dark:hover:bg-gray-600 transition-all duration-300 cursor-pointer"
-            onClick={() => toggleHabit(habit.id)}
-            initial={{ opacity: 0, x: -20 }}
-            animate={{ opacity: 1, x: 0 }}
-            transition={{ delay: index * 0.1 }}
-            whileHover={{ scale: 1.02 }}
-            whileTap={{ scale: 0.98 }}
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            style={{ overflow: 'hidden', marginBottom: '1rem' }}
           >
-            <div className="flex items-center justify-between mb-2">
-              <div className="flex items-center space-x-3">
-                <span className="text-2xl">{habit.icon}</span>
-                <div>
-                  <h3 className="font-medium text-gray-800 dark:text-gray-200">
-                    {habit.name}
-                  </h3>
-                  <p className="text-sm text-gray-500">
-                    {habit.progress}% complete
-                  </p>
-                </div>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <span className={`text-sm font-semibold ${getProgressColor(habit.progress)}`}>
-                  {habit.progress}%
-                </span>
-                {habit.progress >= 100 ? (
-                  <CheckCircle2 className="w-6 h-6 text-green-500" />
-                ) : (
-                  <Circle className="w-6 h-6 text-gray-400 group-hover:text-warm-brown dark:group-hover:text-dark-accent transition-colors" />
-                )}
-                <button
-                  className="opacity-0 group-hover:opacity-100 text-red-500 hover:text-red-600 transition"
-                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(habit.id); }}
-                  title="Delete habit"
-                >
-                  <Trash2 className="w-5 h-5" />
-                </button>
-              </div>
-            </div>
-
-            <div className="w-full bg-gray-200 dark:bg-gray-600 rounded-full h-2 overflow-hidden">
-              <motion.div
-                className={`h-full ${getProgressBg(habit.progress)} rounded-full`}
-                initial={{ width: 0 }}
-                animate={{ width: `${habit.progress}%` }}
-                transition={{ duration: 0.8, delay: index * 0.1 }}
+            <div
+              className="glass-elevated"
+              style={{ borderRadius: 'var(--mm-radius-xl)', padding: '1rem 1.1rem', display: 'flex', gap: '0.6rem', flexWrap: 'wrap', alignItems: 'center' }}
+            >
+              <input
+                className="input-glass"
+                style={{ flex: 1, minWidth: 160, fontSize: '0.85rem' }}
+                placeholder="What habit do you want to build?"
+                value={newTitle}
+                onChange={e => setNewTitle(e.target.value)}
+                onKeyDown={e => e.key === 'Enter' && handleAdd()}
+                autoFocus
               />
+              <select
+                value={newFrequency}
+                onChange={e => setNewFrequency(e.target.value)}
+                style={{
+                  background: 'rgba(15,23,42,0.6)', border: '1px solid var(--mm-border)',
+                  color: 'var(--mm-text-secondary)', borderRadius: 10,
+                  padding: '0.5rem 0.7rem', fontSize: '0.8rem', cursor: 'pointer',
+                }}
+              >
+                <option value="daily">Daily</option>
+                <option value="weekly">Weekly</option>
+              </select>
+              <button
+                className="btn-glow"
+                style={{ padding: '0.5rem 1rem', fontSize: '0.82rem' }}
+                onClick={handleAdd}
+              >
+                Save
+              </button>
             </div>
-
-            {confirmDeleteId === habit.id && (
-              <div className="mt-3 flex justify-end gap-2">
-                <button
-                  className="px-3 py-1 rounded bg-gray-200 dark:bg-gray-600 text-gray-800 dark:text-gray-200"
-                  onClick={(e) => { e.stopPropagation(); setConfirmDeleteId(null); }}
-                >
-                  Cancel
-                </button>
-                <button
-                  className="px-3 py-1 rounded bg-red-500 text-white"
-                  onClick={(e) => { e.stopPropagation(); handleDeleteHabit(habit.id); }}
-                >
-                  Delete
-                </button>
-              </div>
+            {error && (
+              <p style={{ marginTop: '0.4rem', fontSize: '0.75rem', color: '#f87171', paddingLeft: '0.2rem' }}>{error}</p>
             )}
           </motion.div>
-        ))}
-      </div>
+        )}
+      </AnimatePresence>
 
-      <motion.div
-        className="mt-6 p-4 bg-warm-brown/5 dark:bg-dark-accent/5 rounded-xl border border-warm-brown/10 dark:border-dark-accent/10"
-        initial={{ opacity: 0 }}
-        animate={{ opacity: 1 }}
-        transition={{ delay: 0.8 }}
-      >
-        <p className="text-sm text-center text-warm-brown dark:text-dark-accent">
-          🌟 Keep going! Small steps lead to big changes.
-        </p>
-      </motion.div>
-    </motion.div>
+      {/* Habit grid */}
+      {loading ? (
+        <div style={{ textAlign: 'center', padding: '4rem 0' }}>
+          <motion.p
+            animate={{ opacity: [0.4, 1, 0.4] }}
+            transition={{ duration: 2, repeat: Infinity }}
+            style={{ color: 'var(--mm-text-muted)', fontSize: '0.85rem' }}
+          >
+            Loading your habits…
+          </motion.p>
+        </div>
+      ) : habits.length === 0 ? (
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          style={{ textAlign: 'center', padding: '4rem 1rem' }}
+        >
+          <div style={{ fontSize: '3rem', marginBottom: '1rem' }}>🌱</div>
+          <p style={{ color: 'var(--mm-text-secondary)', fontSize: '0.95rem', marginBottom: '0.4rem', fontWeight: 500 }}>
+            No habits yet
+          </p>
+          <p style={{ color: 'var(--mm-text-muted)', fontSize: '0.82rem' }}>
+            Start small — even one habit changes everything.
+          </p>
+        </motion.div>
+      ) : (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(190px, 1fr))', gap: '0.85rem' }}>
+          <AnimatePresence>
+            {habits.map((habit, index) => (
+              <div key={habit.id} style={{ position: 'relative' }}>
+                <HabitCard
+                  habit={habit}
+                  index={index}
+                  onComplete={handleComplete}
+                  onDelete={(id) => setConfirmDeleteId(id)}
+                />
+
+                {/* Delete confirm overlay */}
+                <AnimatePresence>
+                  {confirmDeleteId === habit.id && (
+                    <motion.div
+                      initial={{ opacity: 0 }}
+                      animate={{ opacity: 1 }}
+                      exit={{ opacity: 0 }}
+                      style={{
+                        position: 'absolute', inset: 0,
+                        borderRadius: 'var(--mm-radius-xl)',
+                        background: 'rgba(10,14,26,0.92)',
+                        backdropFilter: 'blur(12px)',
+                        display: 'flex', flexDirection: 'column',
+                        alignItems: 'center', justifyContent: 'center',
+                        gap: 10, padding: '1rem', zIndex: 5,
+                      }}
+                    >
+                      <p style={{ fontSize: '0.82rem', color: 'var(--mm-text-primary)', textAlign: 'center', lineHeight: 1.4 }}>
+                        Remove "{habit.name}"?
+                      </p>
+                      <div style={{ display: 'flex', gap: 8 }}>
+                        <button
+                          onClick={() => setConfirmDeleteId(null)}
+                          style={{
+                            padding: '0.3rem 0.7rem', borderRadius: 8,
+                            background: 'rgba(71,85,105,0.3)', border: '1px solid var(--mm-border)',
+                            color: 'var(--mm-text-secondary)', fontSize: '0.75rem', cursor: 'pointer',
+                          }}
+                        >
+                          Keep
+                        </button>
+                        <button
+                          onClick={() => handleDelete(habit.id)}
+                          style={{
+                            padding: '0.3rem 0.7rem', borderRadius: 8,
+                            background: 'rgba(248,113,113,0.15)', border: '1px solid rgba(248,113,113,0.3)',
+                            color: '#f87171', fontSize: '0.75rem', cursor: 'pointer',
+                          }}
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
+            ))}
+          </AnimatePresence>
+        </div>
+      )}
+    </div>
   );
-};
-
-export default HabitTracker;
+}

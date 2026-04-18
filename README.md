@@ -22,7 +22,7 @@ It detects your emotional state, adapts its tone, tracks your growth over time, 
 ## Architecture
 
 ```
-frontend/          React + Tailwind + Framer Motion
+frontend/          React 19 + Tailwind + Framer Motion
 backend/app/       FastAPI
   soul_engine.py   — organic interjections, meaning moments
   mitra_state.py   — unified identity layer (emotion + memory + growth → single LLM context)
@@ -33,6 +33,7 @@ backend/app/       FastAPI
   growth_engine.py — milestone detection, relationship arc
   growth_routes.py — /growth/arc, /growth/topics, /growth/milestone
   routes.py        — all REST endpoints incl. mood log/history
+  voice_routes.py  — offline Whisper STT transcription
 backend/llm/       Ollama integration + personality system
 chroma_db/         Vector memory (opt-in long-term memory)
 ```
@@ -55,7 +56,10 @@ ollama pull phi            # lighter, ~1.6GB
 ollama pull llama3:8b      # higher quality, ~5GB
 ```
 
-Cloud-routed models via Ollama (e.g. `kimi-k2.5:cloud`) also work if available in your Ollama install.
+**Optional — Voice input (offline STT):**
+```bash
+pip install faster-whisper
+```
 
 ---
 
@@ -98,12 +102,6 @@ Start backend:
 uvicorn app.main:app --reload --port 8000
 ```
 
-For local dev without auth (auto-creates a test user):
-
-```bash
-ALLOW_TEST_TOKEN=true OLLAMA_MODEL=mistral uvicorn app.main:app --reload --port 8000
-```
-
 ### 3. Frontend
 
 ```bash
@@ -114,7 +112,11 @@ npm start
 
 Opens at `http://localhost:3000`.
 
-### 4. Verify
+### 4. Create your account
+
+The app starts at a login screen. Click **"Let's begin."** to register your first account — everything is stored locally and encrypted.
+
+### 5. Verify
 
 ```bash
 curl http://localhost:8000/api/v1/health
@@ -143,9 +145,9 @@ user message
 
 The frontend renders tokens as they arrive — no waiting for full response.
 
-**Presence filter** — a safety layer that catches phrases like "I'm having technical difficulties" or "as an AI" before they reach the user. If caught, replaces with a calm presence phrase ("I'm here. Go on.").
+**Presence filter** — catches phrases like "I'm having technical difficulties" or "as an AI" before they reach the user. Replaced with calm presence phrases ("I'm here. Go on.").
 
-**Soul prompt** — built fresh each message from the user's emotional trajectory, relationship phase, memory fragments, and growth arc. Injected directly into the LLM context so it responds as a person who knows you, not as a fresh chatbot.
+**Soul prompt** — built fresh each message from the user's emotional trajectory, relationship phase, memory fragments, and growth arc. Injected into the LLM context so it responds as a person who knows you, not a fresh chatbot.
 
 ---
 
@@ -153,28 +155,50 @@ The frontend renders tokens as they arrive — no waiting for full response.
 
 | Feature | Status |
 |---|---|
-| SSE streaming chat | Live |
-| Emotion detection (8 categories) | Live |
-| 5 AI personalities | Live |
-| Soul layer (care, timing, interjection) | Live |
-| Growth arc + milestone tracking | Live |
-| Manual mood check-in + 7-day chart | Live |
-| Proactive initiative messages | Live |
-| Vector long-term memory (opt-in) | Live |
-| Journal | Live |
-| Habits + streaks | Live |
-| Encrypted local storage | Live |
-| Offline fallback (localStorage) | Live |
-| WebSocket typing indicators | Live |
+| SSE streaming chat | ✅ Live |
+| Presence-first auth (login / register) | ✅ Live |
+| Emotion detection (8 categories) | ✅ Live |
+| Emotion-reactive background tinting | ✅ Live |
+| 5 AI personalities (switchable mid-chat) | ✅ Live |
+| Soul layer (care, timing, interjection) | ✅ Live |
+| Growth arc + milestone tracking | ✅ Live |
+| Manual mood check-in + 7-day chart | ✅ Live |
+| Proactive initiative messages | ✅ Live |
+| Vector long-term memory (opt-in) | ✅ Live |
+| Journal with emotion tagging | ✅ Live |
+| Habits with streak + ring progress | ✅ Live |
+| Voice input (offline Whisper STT) | ✅ Live |
+| Text-to-speech (emotion-tuned voice) | ✅ Live |
+| Encrypted local storage | ✅ Live |
+| Offline fallback (localStorage) | ✅ Live |
+| WebSocket typing indicators | ✅ Live |
+| Adaptive memory (opt-in controls) | ✅ Live |
+
+---
+
+## UI Design
+
+MyMitra uses a **presence-first design system** — deep navy base, animated glassmorphism surfaces, and emotion-reactive orbs that shift color based on what you're feeling.
+
+| Module | Inspired by |
+|---|---|
+| Chat | Character.AI, Pi AI — warm conversational flow |
+| Habits | Streaks (Apple Watch rings), Duolingo (streak fire) |
+| Journal | Bear Notes (clean typography), Day One (date-first entries) |
+| Mood | Daylio (emoji grid), Waking Up (minimal calm) |
+| Auth screen | Presence-first — breathing orb, warm greetings |
 
 ---
 
 ## API Reference
 
 ```
+POST /api/v1/register          Create account
+POST /api/v1/token             Login (OAuth2 form)
 POST /api/v1/chat/stream       SSE streaming chat
 GET  /api/v1/chat/initiative   Proactive check-in message
 GET  /api/v1/chat/personalities All available personalities
+POST /api/v1/chat/command      Slash commands (/clear, /memory, /focus, /calm)
 GET  /api/v1/growth/arc        Relationship arc + phase
 GET  /api/v1/growth/topics     Life topics discussed
 POST /api/v1/growth/milestone  Detect + record milestone
@@ -182,7 +206,12 @@ POST /api/v1/mood/log          Log manual mood check-in
 GET  /api/v1/mood/history      Recent mood entries
 GET  /api/v1/habits            Habit list
 POST /api/v1/habits            Create habit
+POST /api/v1/habits/{id}/complete  Mark habit complete
 GET  /api/v1/journals          Journal entries
+POST /api/v1/journals          Create journal entry
+GET  /api/v1/memory/preferences  Adaptive memory settings
+PUT  /api/v1/memory/preferences  Update memory opt-in
+POST /api/v1/voice/transcribe  Offline Whisper STT
 GET  /api/v1/health            Backend health
 ```
 
@@ -203,20 +232,23 @@ Supported: Windows 10/11, macOS 12+, Linux
 ```
 backend/
   app/
-    main.py              FastAPI app + DB init
-    routes.py            REST endpoints
-    stream_routes.py     SSE soul loop
-    soul_engine.py       Interjections, meaning moments
+    main.py              FastAPI app + DB init + schema migrations
+    routes.py            REST endpoints (chat, habits, journals, mood, insights)
+    stream_routes.py     SSE soul loop (Phase 5)
+    soul_engine.py       Interjections, meaning moments, adaptive personality
     mitra_state.py       Unified identity layer
-    care_layer.py        Warmth injection, timing
-    initiative_engine.py Proactive check-ins
+    care_layer.py        Warmth injection, human timing
+    initiative_engine.py Proactive check-ins (3-tier)
     smart_tasks.py       Gentle automation detection
     growth_engine.py     Milestone + arc computation
     growth_routes.py     Growth API endpoints
-    mitra_core.py        Intent detection, emotion mapping
+    memory_routes.py     Adaptive memory opt-in controls
+    personality_routes.py Personality switching + analytics
+    voice_routes.py      Offline Whisper STT
+    mitra_core.py        Intent detection, emotion-to-behavior mapping
     models.py            SQLAlchemy models
     crud.py              DB operations
-    security.py          JWT auth
+    security.py          JWT auth + encryption
   llm/
     ollama_model.py      Ollama client + personality system
   vector_memory.py       ChromaDB long-term memory
@@ -224,15 +256,23 @@ backend/
 
 frontend/
   src/
-    Chat.js              Full streaming SSE chat UI
-    App.js               Sidebar + emotion-reactive background
-    index.css            Design system (glassmorphism, emotion colors)
+    Login.js             Presence-first auth screen (login + register)
+    App.js               Auth gate + sidebar + emotion-reactive background
+    Chat.js              Full streaming SSE chat, TTS, WebSocket, soul events
+    index.css            Design system (glassmorphism, emotion colors, animations)
+    components/
+      Sidebar.jsx        Collapsible nav with live username
+      HabitTracker.jsx   Ring progress + streak fire + card grid
+      Journal.jsx        Bear-style writing + emotion-tagged entries
+      GrowthTimeline.jsx Relationship arc + milestone timeline
+      VoiceInput.jsx     Offline microphone → Whisper STT
     pages/
-      MoodTracking.js    Mood check-in + 7-day chart
-      GrowthTimeline.jsx Growth arc + milestones
-      Insights.js        Growth journey view
+      MoodTracking.js    Emoji grid check-in + 7-day trend chart
+      Insights.js        Growth journey + activity charts
     services/
-      api.js             All backend API calls
+      api.js             All backend API calls + auth failure callback
+    utils/
+      theme.js           ThemeProvider + emotion color map
 ```
 
 ---
@@ -245,6 +285,8 @@ frontend/
 - Smart study planner
 - Offline push notifications
 - Memory boundaries per personality
+- Daily affirmation / intention setting
+- Export journal as PDF
 
 ---
 

@@ -843,6 +843,7 @@ function Chat({ onEmotionChange }) {
               onKeyDown={handleKeyDown}
               placeholder={isStreaming ? "Mitra is with you…" : "Say anything…"}
               className="input-glass"
+              style={{ flex: 1, width: 'auto' }}
               disabled={isStreaming}
               autoFocus
             />

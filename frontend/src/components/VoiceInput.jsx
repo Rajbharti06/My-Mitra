@@ -2,7 +2,7 @@ import React, { useState, useRef, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Mic, MicOff, Loader } from 'lucide-react';
 
-const BACKEND = process.env.REACT_APP_API_URL || 'http://localhost:8000';
+const BACKEND = (process.env.REACT_APP_API_BASE || 'http://localhost:8000/api/v1').replace(/\/api\/v1\/?$/, '');
 
 const VoiceInput = ({ onTranscript, disabled }) => {
   const [state, setState] = useState('idle'); // idle | recording | processing
