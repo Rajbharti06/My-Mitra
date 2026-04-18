@@ -36,7 +36,7 @@ class OllamaMyMitraModel:
     def __init__(self, base_url: str = "http://localhost:11434"):
         self.base_url = base_url
         # Default to lighter model for low-end devices
-        self.model_name = os.environ.get("MYMITRA_OLLAMA_MODEL", "phi:latest")
+        self.model_name = os.environ.get("MYMITRA_OLLAMA_MODEL", "kimi-k2.5:cloud")
         self.current_personality = PersonalityType.DEFAULT
         self.client = httpx.AsyncClient(base_url=self.base_url, timeout=60.0)
         
@@ -253,9 +253,13 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
         full_prompt += f"\n\nUser: {user_input}\nMitra:"
 
         try:
-            max_tokens = 120 if fast_mode else 200
-            timeout_seconds = 15 if fast_mode else 30
-            
+            # kimi-k2.5:cloud is a thinking model: it needs large num_predict to
+            # finish its internal reasoning (<think>…</think>) BEFORE emitting the
+            # final response. With too few tokens the response field is always empty.
+            is_thinking_model = any(x in self.model_name for x in ("kimi", "deepseek", "qwq", "r1"))
+            max_tokens = 2500 if is_thinking_model else (150 if fast_mode else 256)
+            timeout_seconds = 90 if is_thinking_model else (20 if fast_mode else 45)
+
             response = await self.client.post(
                 "/api/generate",
                 json={
@@ -263,12 +267,11 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
                     "prompt": full_prompt,
                     "stream": False,
                     "options": {
-                        "temperature": 0.7, # Lower for more predictable/faster
+                        "temperature": 0.75,
                         "top_p": 0.9,
-                        "max_tokens": max_tokens,
-                        "stop": ["Student:", "User:", "\n\nStudent:", "\n\nUser:"],
+                        "stop": ["User:", "\n\nUser:", "Student:", "\n\nStudent:"],
                         "repeat_penalty": 1.1,
-                        "num_predict": max_tokens
+                        "num_predict": max_tokens,
                     }
                 },
                 timeout=timeout_seconds
@@ -277,11 +280,21 @@ Keep responses warm, genuine, and grounding. Use 1-2 appropriate emojis. Focus o
             if response.status_code == 200:
                 result = response.json()
                 ai_response = result.get("response", "").strip()
-                
+
+                # Thinking models return empty response + non-empty thinking on timeout/short predict.
+                # If response is empty, use last sentence of thinking as a last-resort.
+                if not ai_response:
+                    thinking = result.get("thinking", "").strip()
+                    if thinking:
+                        logger.warning("Thinking model returned empty response — extracting from thinking field")
+                        # Last meaningful sentence of the thought is closest to a conclusion
+                        sentences = [s.strip() for s in thinking.replace('\n', ' ').split('.') if len(s.strip()) > 20]
+                        ai_response = sentences[-1] + "." if sentences else ""
+
                 if not ai_response or len(ai_response) < 5:
                     logger.warning("Generated response too short, using fallback")
                     return self._generate_fallback_response(user_input)
-                
+
                 enhanced_response = make_human_like(ai_response, user_input)
                 logger.info(f"Generated {len(enhanced_response)} char response in {self.current_personality.value} mode")
                 return enhanced_response

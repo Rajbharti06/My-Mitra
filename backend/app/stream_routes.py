@@ -82,8 +82,8 @@ _PRESENCE_FALLBACKS = [
     "Hey… I hear you. Keep going.",
 ]
 
-_last_response_cache: dict[int, str] = {}
-_intent_cache: dict[int, str] = {}
+_last_response_cache: dict[str, str] = {}   # key: session_id
+_intent_cache: dict[str, str] = {}            # key: session_id
 
 # ─── Input noise detection ────────────────────────────────────────────────
 _NOISE_REPLIES = [
@@ -122,7 +122,7 @@ def _reflection_prefix(emotion: str, intensity: str) -> str:
         return random.choice(phrases) + " "
     return ""
 
-def _sanitize_response(response: str, user_input: str, user_id: int = 0) -> str:
+def _sanitize_response(response: str, user_input: str, session_key: str = "default") -> str:
     """Strip system language and prevent identical back-to-back responses."""
     import random
     lower = response.lower()
@@ -130,20 +130,20 @@ def _sanitize_response(response: str, user_input: str, user_id: int = 0) -> str:
         logger.warning("Presence filter caught system language in response — replacing.")
         response = random.choice(_PRESENCE_FALLBACKS)
 
-    last = _last_response_cache.get(user_id, "")
+    last = _last_response_cache.get(session_key, "")
     if response.strip() == last.strip():
         alts = [r for r in _PRESENCE_FALLBACKS if r != response]
         response = random.choice(alts)
 
-    _last_response_cache[user_id] = response
+    _last_response_cache[session_key] = response
     return response
 
 
 # ─── Quick-intent short-circuits + meta-awareness ────────────────────────
 import random as _random
 
-_name_store: dict[int, str] = {}
-_message_history: dict[int, list] = {}   # last 5 raw messages per user
+_name_store: dict[str, str] = {}           # key: session_id
+_message_history: dict[str, list] = {}    # key: session_id — last 6 raw messages
 
 _GREETING_FOLLOWUP_RESPONSES = [
     "Hey… I'm here. What's going on with you today?",
@@ -158,44 +158,46 @@ _IDENTITY_LOOP_RESPONSES = [
     "You've asked that a few times now. What's behind it?",
 ]
 
-def _track_message(user_id: int, message: str) -> list:
-    hist = _message_history.setdefault(user_id, [])
+def _track_message(session_key: str, message: str) -> list:
+    hist = _message_history.setdefault(session_key, [])
     hist.append(message.lower().strip())
-    if len(hist) > 5:
+    if len(hist) > 6:
         hist.pop(0)
     return hist
 
 def _detect_pattern(history: list) -> str | None:
-    if len(history) < 2:
+    if len(history) < 3:
         return None
     identity_words = ("who are you", "what are you", "your name", "who made you",
-                      "what's your name", "whats your name", "tell me who")
-    recent = history[-4:]
+                      "what's your name", "whats your name", "tell me who", "who created")
+    # Only look at last 3 messages and require 3 hits (stricter)
+    recent = history[-3:]
     identity_hits = sum(1 for m in recent if any(w in m for w in identity_words))
-    if identity_hits >= 2:
+    if identity_hits >= 3:
         return "identity_loop"
     return None
 
-def _get_quick_response(message: str, last_intent: str, user_id: int = 0) -> str | None:
+def _get_quick_response(message: str, last_intent: str, session_key: str = "default") -> str | None:
     t = message.lower().strip().rstrip("?!.")
 
-    hist = _track_message(user_id, message)
+    hist = _track_message(session_key, message)
     pattern = _detect_pattern(hist)
+
+    # Name-giving — always intercept this (check BEFORE identity loop)
+    name_match = re.search(r"(?:call you|your name is|i['']?ll call you|name you|call me)\s+([A-Za-z]+)", message, re.IGNORECASE)
+    if name_match:
+        given_name = name_match.group(1).strip()
+        if given_name.lower() not in ("a", "the", "my", "your", "me", "you"):
+            _name_store[session_key] = given_name
+            return _random.choice([
+                f"{given_name}? …alright. If that's how you see me.",
+                f"Okay… {given_name} it is. What's going on with you?",
+                f"{given_name}. I can work with that. What's on your mind?",
+            ])
 
     # Meta-awareness: notice the loop before answering it again
     if pattern == "identity_loop":
         return _random.choice(_IDENTITY_LOOP_RESPONSES)
-
-    # Name-giving — always intercept this
-    name_match = re.search(r"(?:call you|your name is|i'll call you|name you)\s+([A-Za-z]+)", message, re.IGNORECASE)
-    if name_match:
-        given_name = name_match.group(1).strip()
-        _name_store[user_id] = given_name
-        return _random.choice([
-            f"{given_name}? …alright. If that's how you want to see me.",
-            f"Okay… {given_name} it is. What's on your mind?",
-            f"{given_name}. I can work with that. What's going on with you?",
-        ])
 
     # First-time identity — answer once, then LLM handles with context
     already_answered = any(
@@ -214,7 +216,7 @@ def _get_quick_response(message: str, last_intent: str, user_id: int = 0) -> str
                 "Honestly? I'm just here. What's on your mind?",
             ])
 
-    # Repeated greeting
+    # Repeated greeting (only if truly just a greeting word)
     if t in ("hey", "hi", "hello", "sup", "yo", "heya") and last_intent == "greeting":
         return _random.choice(_GREETING_FOLLOWUP_RESPONSES)
 
@@ -478,13 +480,14 @@ async def _generate_stream(
         })
 
     # ── Step 8: Generate response via unified Mitra state ────────────
-    # ── Determine response source ─────────────────────────────────────
-    _last_intent = _intent_cache.get(user_id or 0, "")
-    _intent_cache[user_id or 0] = intent
+    # Use session_id as key to isolate each conversation's state
+    _session_key = session_id or str(user_id or "anon")
+    _last_intent = _intent_cache.get(_session_key, "")
+    _intent_cache[_session_key] = intent
 
     if _is_noise(message):
         full_response = random.choice(_NOISE_REPLIES)
-    elif (quick := _get_quick_response(message, _last_intent, user_id=user_id or 0)):
+    elif (quick := _get_quick_response(message, _last_intent, session_key=_session_key)):
         full_response = quick
     else:
         try:
@@ -497,13 +500,15 @@ async def _generate_stream(
                 session_id=session_id,
                 soul_prompt=soul_instructions,
             )
-            full_response = result.get("response", "I'm here with you.")
+            full_response = result.get("response", "")
+            if not full_response or len(full_response.strip()) < 4:
+                full_response = random.choice(_PRESENCE_FALLBACKS)
         except Exception as e:
             logger.error(f"Response generation failed: {e}")
-            full_response = "I'm still here with you."
+            full_response = random.choice(_PRESENCE_FALLBACKS)
 
     # ── Presence filter: strip system language + prevent repeats ─────
-    full_response = _sanitize_response(full_response, message, user_id=user_id or 0)
+    full_response = _sanitize_response(full_response, message, session_key=_session_key)
 
     # ── Step 9: Care injection ────────────────────────────────────────
     is_vulnerable = "vulnerable" in mitra_st.get("trajectory", "").lower()
